@@ -1,0 +1,26 @@
+# Commands that build the os kernel
+
+### assemble bootstrap
+`i686-elf-as src/boot.s -o build/boot.o`
+
+### compile kernel
+`i686-elf-gcc -c src/kernel.c -o build/kernel.o -std=gnu99 -ffreestanding -O2 -Wall -Wextra`
+
+### build kernel
+`i686-elf-gcc -T linker.ld -o build/myos.bin -ffreestanding -O2 -nostdlib src/boot.o src/kernel.o -lgcc`
+
+### build iso
+```
+mkdir -p isodir/boot/grub
+cp build/myos.bin isodir/boot/myos.bin
+cp grub.cfg isodir/boot/grub/grub.cfg
+grub-mkrescue -o build/myos.iso isodir
+```
+
+## Run QEMU
+
+### .iso
+`qemu-system-i386 -cdrom build/myos.iso`
+
+### .bin with multiboot header
+`qemu-system-i386 -kernel build/myos.bin`

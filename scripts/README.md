@@ -1,5 +1,7 @@
 # Commands that build the os kernel
 
+Follow this [tutorial](https://wiki.osdev.org/GCC_Cross-Compiler) to get source folders for the required packages.
+
 ### assemble bootstrap
 `i686-elf-as src/boot.s -o build/boot.o`
 

@@ -1,6 +1,3 @@
-# only remove settings
-.vscode/settings.json
-
 # build files
 build
 isodir

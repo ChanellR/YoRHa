@@ -1,0 +1,25 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/include/**"
+            ],
+            "defines": [],
+            "cStandard": "gnu99",
+            "cppStandard": "gnu++17",
+            "intelliSenseMode": "gcc-x64",
+            "compilerPath": "${env:HOME}/opt/cross/bin/i686-elf-gcc",
+            "compilerArgs": [
+                "-std=gnu99 ",
+                "-ffreestanding ",
+                "-O2 ",
+                "-Wall ",
+                "-Wextra ",
+                "-Iinclude ",
+                "-g "
+            ]
+        }
+    ],
+    "version": 4
+}

@@ -24,3 +24,6 @@ grub-mkrescue -o build/myos.iso isodir
 
 ### .bin with multiboot header
 `qemu-system-i386 -kernel build/myos.bin`
+
+## Read Disk Image
+`dd if=disk/hd.img of=/dev/stdout bs=512 count=<sector_count> skip=<start>`

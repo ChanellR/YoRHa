@@ -40,12 +40,12 @@ run: $(KERNEL_BIN) disk/hd.img
 	$(QEMU) -m 512M -drive file=disk/hd.img,format=raw -kernel $(KERNEL_BIN)
 
 debug: $(KERNEL_BIN) disk/hd.img
-	$(QEMU) -s -S -m 512M -drive file=disk/hd.img,format=raw -kernel $(KERNEL_BIN)
+	$(QEMU) -s -S -m 512M -drive file=disk/hd.img,format=raw -kernel $(KERNEL_BIN) -display gtk,zoom-to-fit=on
 
 clean_all: clean clean_disk
 
 clean:
-	rm -f $(KERNEL_OBJS) $(KERNEL_ELF) $(KERNEL_BIN)
+	@rm -f $(KERNEL_OBJS) $(KERNEL_ELF) $(KERNEL_BIN)
 
 clean_disk:
 	@rm -f disk/hd.img

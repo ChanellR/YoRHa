@@ -71,6 +71,7 @@ void ata_read_sectors(uint32_t lba, uint32_t sector_count, const uint8_t* buffer
 
     for (uint8_t sector = 0; sector < sector_count; sector++) {
         while (!(inb(ATA_REG_STATUS) & ATA_SR_DRQ));
+        // NOTE: If bytes are entered in small endian, does it call it back the right way
         rep_insw(ATA_REG_DATA, (void*)(&buffer[sector * SECTOR_BYTES]), SECTOR_WORDS); // 256 words (512 bytes)
     }
 }

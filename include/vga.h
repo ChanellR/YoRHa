@@ -305,4 +305,17 @@ uint32_t str_len(const char* s) {
 	return len;
 }
 
+// returns the number of added characters
+uint32_t str_concat(char* src, char* dst) {
+	uint32_t len = 0;
+	while (*src) {
+		*dst = *src;
+		src++;
+		dst++;
+		len++;
+	}
+	*dst = '\0';
+	return len; // so that you can take over the space with \0
+}
+
 #endif // OUTPUT_H

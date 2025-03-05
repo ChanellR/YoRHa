@@ -141,9 +141,9 @@ void buff_to_hexstring(void* src, char* dst, uint32_t count) {
 		for (int8_t byte = 3; byte >= 0; byte--) {
 			// dst[word*8 + (3-byte)*2] = nib_to_hex[((uint32_t*)src)[word] >> byte * 8 + 4];
 			// dst[word*8 + (3-byte)*2 + 1] = nib_to_hex[(((uint32_t*)src)[word] >> byte * 8) & 0xF];
-			uint8_t top = ((uint32_t*)src)[word] >> (byte * 8 + 4);
+			uint8_t top = (((uint32_t*)src)[word] >> (byte * 8 + 4)) & 0xF;
 			uint8_t bottom = (((uint32_t*)src)[word] >> (byte * 8)) & 0xF;
-			// kprintf("top %u, bottom %u\n", top, bottom);
+			// kprintf("word: %u, byte: %u, top %u, bottom %u\n", word, byte, top, bottom);
 			*(dst++) = nib_to_hex[top];
 			*(dst++) = nib_to_hex[bottom];
 		}
@@ -234,7 +234,7 @@ void kprintf(const char* fmt, ...) {
 				}
 				case 'x': { // hexadecimal
 					// assume 32 bit hex value
-					char hex_num[8]; // 8 nums plus prefix
+					char hex_num[9]; // 8 nums plus prefix
 					uint32_t num = va_arg(argptr, uint32_t);
 					buff_to_hexstring((void*)(&num), hex_num, 4);
 					kwrite(hex_num, 8);

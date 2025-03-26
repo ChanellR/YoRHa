@@ -275,6 +275,12 @@ void memcpy(void* src, void* dst, uint32_t count) {
 	}
 }
 
+void memset(void* dst, uint8_t val, size_t count) {
+	for (size_t byte = 0; byte < count; byte++) {
+		((uint8_t*)dst)[byte] = val;
+	}
+}
+
 bool strcomp(char* a, char* b) {
 	while (*a || *b) {
 		if (*a != *b) {

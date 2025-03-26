@@ -28,7 +28,7 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.s
 	@mkdir -p $(BUILD_DIR)
-	$(AS) $< -o $@
+	$(AS) $< -g -o $@
 
 $(KERNEL_BIN): $(KERNEL_OBJS)
 	$(CC) $(LDFLAGS) -o $(KERNEL_BIN) -ffreestanding -O2 -nostdlib $(KERNEL_OBJS) -lgcc
@@ -40,7 +40,7 @@ run: $(KERNEL_BIN) disk/hd.img
 	$(QEMU) -m 512M -drive file=disk/hd.img,format=raw -kernel $(KERNEL_BIN)
 
 debug: $(KERNEL_BIN) disk/hd.img
-	$(QEMU) -s -S -m 512M -drive file=disk/hd.img,format=raw -kernel $(KERNEL_BIN) -display gtk,zoom-to-fit=on
+	$(QEMU) -s -S -m 512M -drive file=disk/hd.img,format=raw -kernel $(KERNEL_BIN) -display gtk,zoom-to-fit=on -d int
 
 clean_all: clean clean_disk
 

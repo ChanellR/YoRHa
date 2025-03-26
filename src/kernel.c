@@ -253,7 +253,6 @@ typedef struct {
 
 static FileDescriptorTable global_fd_table = {0}; // clear bitmap
 
-// -- FILE SYSTEM SYSCALLS --
 static char error_msg[128] = {0}; // error message buffer for everyone to use
 
 // returns the inode_num corresponding to the directory
@@ -482,6 +481,8 @@ int32_t search_dir(uint32_t dir_inode_num, char* filename) {
 	return -1;
 }
 
+// -- FILE SYSTEM SYSCALLS --
+
 // will automatically open the file
 // returns a file descriptor
 int64_t create(const char* path) {
@@ -678,6 +679,31 @@ int64_t seek(int64_t fd, uint64_t pos) {
 	return pos;
 }
 
+uint32_t mkdir(const char* path) {
+	PANIC("Not Implemented");
+	return -1;
+}
+
+// outputs directories to the buffer
+void list_dir(const char* path, char* buf) {
+	
+	char dir_path[str_len(path)];
+	char filename[32];
+	parse_path(path, dir_path, filename);
+	uint32_t dir_inode_num = seek_directory(dir_path);
+	uint8_t current_dir_buf[BLOCK_BYTES];
+	FileSystemDirDataBlock* dir_ptr = (FileSystemDirDataBlock*)current_dir_buf;
+	
+	FileSystemInode dir_inode = global_inode_table[dir_inode_num];
+	ata_read_blocks(dir_inode.data_block_start, current_dir_buf, 1); // only 1 for now
+	uint32_t files_contained = dir_inode.size / sizeof(FileSystemDirEntry); 
+	for (uint32_t file = 0; file < files_contained; file++) {
+		buf += str_concat(path, buf);
+		buf += str_concat(dir_ptr->contents[file].name, buf);
+		*(buf++) = '\n';
+	}
+}
+
 void run_tests(void) {
 	kprintf("Running Tests...\n");
 	
@@ -708,41 +734,637 @@ void shutdown() {
 	ata_write_blocks(global_super.inode_table_start, (uint8_t*)global_inode_table, INODE_TABLE_SIZE);
 }
 
-uint32_t mkdir(const char* path) {
-	PANIC("Not Implemented");
-	return -1;
+extern uint32_t end_kernel;
+struct gdt_entry {
+	/* Limits */
+	unsigned short limit_low;
+	/* Segment address */
+	unsigned short base_low;
+	unsigned char base_middle;
+	/* Access modes */
+	unsigned char access;
+	unsigned char granularity;
+	unsigned char base_high;
+} __attribute__((packed));
+
+/*
+ * GDT pointer
+ */
+struct gdt_ptr {
+	unsigned short limit;
+	unsigned int base;
+} __attribute__((packed));
+
+struct gdt_entry	gdt[6];
+struct gdt_ptr		gp;
+
+/**
+ * (ASM) gdt_flush
+ * Reloads the segment registers
+ */
+extern void gdt_flush();
+
+/**
+ * Set a GDT descriptor
+ *
+ * @param num The number for the descriptor to set.
+ * @param base Base address
+ * @param limit Limit
+ * @param access Access permissions
+ * @param gran Granularity
+ */
+void
+gdt_set_gate(
+		int num,
+		unsigned long base,
+		unsigned long limit,
+		unsigned char access,
+		unsigned char gran
+		) {
+	/* Base Address */
+	gdt[num].base_low =		(base & 0xFFFF);
+	gdt[num].base_middle =	(base >> 16) & 0xFF;
+	gdt[num].base_high =	(base >> 24) & 0xFF;
+	/* Limits */
+	gdt[num].limit_low =	(limit & 0xFFFF);
+	gdt[num].granularity =	(limit >> 16) & 0X0F;
+	/* Granularity */
+	gdt[num].granularity |= (gran & 0xF0);
+	/* Access flags */
+	gdt[num].access = access;
 }
 
-// outputs directories to the buffer
-void list_dir(const char* path, char* buf) {
+/*
+ * gdt_install
+ * Install the kernel's GDTs
+ */
+void
+gdt_install() {
+	/* GDT pointer and limits */
+	gp.limit = (sizeof(struct gdt_entry) * 5) - 1;
+	gp.base = (unsigned int)&gdt;
+	/* NULL */
+	gdt_set_gate(0, 0, 0, 0, 0);
+	/* Code segment */
+	gdt_set_gate(1, 0, 0xFFFFFFFF, 0x9A, 0xCF);
+	/* Data segment */
+	gdt_set_gate(2, 0, 0xFFFFFFFF, 0x92, 0xCF);
+	/* User code */
+	gdt_set_gate(3, 0, 0xFFFFFFFF, 0xFA, 0xCF);
+	/* User data */
+	gdt_set_gate(4, 0, 0xFFFFFFFF, 0xF2, 0xCF);
+	// write_tss(5, 0x10, 0x0);
+	/* Go go go */
+	gdt_flush();
+	// tss_flush();
+}
+
+/*
+ * IDT Entry
+ */
+struct idt_entry {
+	unsigned short base_low;
+	unsigned short sel;
+	unsigned char zero;
+	unsigned char flags;
+	unsigned short base_high;
+} __attribute__((packed));
+
+/*
+ * IDT pointer
+ */
+struct idt_ptr {
+	unsigned short limit;
+	uintptr_t base;
+} __attribute__((packed));
+
+struct idt_entry idt[256];
+struct idt_ptr idtp;
+
+extern void idt_load();
+
+/*
+ * idt_set_gate
+ * Set an IDT gate
+ */
+void
+idt_set_gate(
+		unsigned char num,
+		unsigned long base,
+		unsigned short sel,
+		unsigned char flags
+		) {
+	idt[num].base_low =		(base & 0xFFFF);
+	idt[num].base_high =	(base >> 16) & 0xFFFF;
+	idt[num].sel =			sel;
+	idt[num].zero =			0;
+	idt[num].flags =		flags | 0x60;
+}
+
+/*
+ * idt_install
+ * Install the IDTs
+ */
+void idt_install() {
+	idtp.limit = (sizeof(struct idt_entry) * 256) - 1;
+	idtp.base = (uintptr_t)&idt;
+	memset(&idt, 0, sizeof(struct idt_entry) * 256);
+	idt_load();
+}
+
+/* bkerndev - Bran's Kernel Development Tutorial
+*  By:   Brandon F. (friesenb@gmail.com)
+*  Desc: Interrupt Service Routines installer and exceptions
+*
+*  Notes: No warranty expressed or implied. Use at own risk. */
+// #include <system.h>
+
+/* These are function prototypes for all of the exception
+*  handlers: The first 32 entries in the IDT are reserved
+*  by Intel, and are designed to service exceptions! */
+extern void isr0();
+extern void isr1();
+extern void isr2();
+extern void isr3();
+extern void isr4();
+extern void isr5();
+extern void isr6();
+extern void isr7();
+extern void isr8();
+extern void isr9();
+extern void isr10();
+extern void isr11();
+extern void isr12();
+extern void isr13();
+extern void isr14();
+extern void isr15();
+extern void isr16();
+extern void isr17();
+extern void isr18();
+extern void isr19();
+extern void isr20();
+extern void isr21();
+extern void isr22();
+extern void isr23();
+extern void isr24();
+extern void isr25();
+extern void isr26();
+extern void isr27();
+extern void isr28();
+extern void isr29();
+extern void isr30();
+extern void isr31();
+
+/* This is a very repetitive function... it's not hard, it's
+*  just annoying. As you can see, we set the first 32 entries
+*  in the IDT to the first 32 ISRs. We can't use a for loop
+*  for this, because there is no way to get the function names
+*  that correspond to that given entry. We set the access
+*  flags to 0x8E. This means that the entry is present, is
+*  running in ring 0 (kernel level), and has the lower 5 bits
+*  set to the required '14', which is represented by 'E' in
+*  hex. */
+void isrs_install()
+{
+    idt_set_gate(0, (unsigned)isr0, 0x08, 0x8E);
+    idt_set_gate(1, (unsigned)isr1, 0x08, 0x8E);
+    idt_set_gate(2, (unsigned)isr2, 0x08, 0x8E);
+    idt_set_gate(3, (unsigned)isr3, 0x08, 0x8E);
+    idt_set_gate(4, (unsigned)isr4, 0x08, 0x8E);
+    idt_set_gate(5, (unsigned)isr5, 0x08, 0x8E);
+    idt_set_gate(6, (unsigned)isr6, 0x08, 0x8E);
+    idt_set_gate(7, (unsigned)isr7, 0x08, 0x8E);
+
+    idt_set_gate(8, (unsigned)isr8, 0x08, 0x8E);
+    idt_set_gate(9, (unsigned)isr9, 0x08, 0x8E);
+    idt_set_gate(10, (unsigned)isr10, 0x08, 0x8E);
+    idt_set_gate(11, (unsigned)isr11, 0x08, 0x8E);
+    idt_set_gate(12, (unsigned)isr12, 0x08, 0x8E);
+    idt_set_gate(13, (unsigned)isr13, 0x08, 0x8E);
+    idt_set_gate(14, (unsigned)isr14, 0x08, 0x8E);
+    idt_set_gate(15, (unsigned)isr15, 0x08, 0x8E);
+
+    idt_set_gate(16, (unsigned)isr16, 0x08, 0x8E);
+    idt_set_gate(17, (unsigned)isr17, 0x08, 0x8E);
+    idt_set_gate(18, (unsigned)isr18, 0x08, 0x8E);
+    idt_set_gate(19, (unsigned)isr19, 0x08, 0x8E);
+    idt_set_gate(20, (unsigned)isr20, 0x08, 0x8E);
+    idt_set_gate(21, (unsigned)isr21, 0x08, 0x8E);
+    idt_set_gate(22, (unsigned)isr22, 0x08, 0x8E);
+    idt_set_gate(23, (unsigned)isr23, 0x08, 0x8E);
+
+    idt_set_gate(24, (unsigned)isr24, 0x08, 0x8E);
+    idt_set_gate(25, (unsigned)isr25, 0x08, 0x8E);
+    idt_set_gate(26, (unsigned)isr26, 0x08, 0x8E);
+    idt_set_gate(27, (unsigned)isr27, 0x08, 0x8E);
+    idt_set_gate(28, (unsigned)isr28, 0x08, 0x8E);
+    idt_set_gate(29, (unsigned)isr29, 0x08, 0x8E);
+    idt_set_gate(30, (unsigned)isr30, 0x08, 0x8E);
+    idt_set_gate(31, (unsigned)isr31, 0x08, 0x8E);
+}
+
+/* This is a simple string array. It contains the message that
+*  corresponds to each and every exception. We get the correct
+*  message by accessing like:
+*  exception_message[interrupt_number] */
+unsigned char *exception_messages[] =
+{
+    "Division By Zero",
+    "Debug",
+    "Non Maskable Interrupt",
+    "Breakpoint",
+    "Into Detected Overflow",
+    "Out of Bounds",
+    "Invalid Opcode",
+    "No Coprocessor",
+
+    "Double Fault",
+    "Coprocessor Segment Overrun",
+    "Bad TSS",
+    "Segment Not Present",
+    "Stack Fault",
+    "General Protection Fault",
+    "Page Fault",
+    "Unknown Interrupt",
+
+    "Coprocessor Fault",
+    "Alignment Check",
+    "Machine Check",
+    "Reserved",
+    "Reserved",
+    "Reserved",
+    "Reserved",
+    "Reserved",
+
+    "Reserved",
+    "Reserved",
+    "Reserved",
+    "Reserved",
+    "Reserved",
+    "Reserved",
+    "Reserved",
+    "Reserved"
+};
+
+struct regs
+{
+	// In this order
+	uint32_t gs, fs, es, ds;
+	uint32_t edi, esi, ebp, esp, ebx, edx, ecx, eax;	
+    uint32_t int_no, err_code;
+	// not as sure about useresp, and ss,
+	// haven't tried going from ring 3 -> 0. 
+	uint32_t eip, cs, eflags, useresp, ss; 
+}__attribute__((packed));
+
+/* All of our Exception handling Interrupt Service Routines will
+*  point to this function. This will tell us what exception has
+*  happened! Right now, we simply halt the system by hitting an
+*  endless loop. All ISRs disable interrupts while they are being
+*  serviced as a 'locking' mechanism to prevent an IRQ from
+*  happening and messing up kernel data structures */
+void fault_handler(struct regs *r)
+{
+	kprint("Entered\n");
+    if (r->int_no < 32)
+    {
+        kprintf(exception_messages[r->int_no]);
+        kprintf(" Exception. System Halted!\n");
+        for (;;);
+    }
+}
+
+
+/* These are own ISRs that point to our special IRQ handler
+*  instead of the regular 'fault_handler' function */
+extern void irq0();
+extern void irq1();
+extern void irq2();
+extern void irq3();
+extern void irq4();
+extern void irq5();
+extern void irq6();
+extern void irq7();
+extern void irq8();
+extern void irq9();
+extern void irq10();
+extern void irq11();
+extern void irq12();
+extern void irq13();
+extern void irq14();
+extern void irq15();
+
+/* This array is actually an array of function pointers. We use
+*  this to handle custom IRQ handlers for a given IRQ */
+void *irq_routines[16] =
+{
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0
+};
+
+/* This installs a custom IRQ handler for the given IRQ */
+void irq_install_handler(int irq, void (*handler)(struct regs *r))
+{
+    irq_routines[irq] = handler;
+}
+
+/* This clears the handler for a given IRQ */
+void irq_uninstall_handler(int irq)
+{
+    irq_routines[irq] = 0;
+}
+
+#define PIC_EOI		0x20		/* End-of-interrupt command code */
+
+#define PIC1		0x20		/* IO base address for master PIC */
+#define PIC2		0xA0		/* IO base address for slave PIC */
+#define PIC1_COMMAND	PIC1
+#define PIC1_DATA	(PIC1+1)
+#define PIC2_COMMAND	PIC2
+#define PIC2_DATA	(PIC2+1)
+
+void PIC_sendEOI(uint8_t irq)
+{
+	if(irq >= 8)
+		outb(PIC2_COMMAND,PIC_EOI);
 	
-	char dir_path[str_len(path)];
-	char filename[32];
-	parse_path(path, dir_path, filename);
-	uint32_t dir_inode_num = seek_directory(dir_path);
-	uint8_t current_dir_buf[BLOCK_BYTES];
-	FileSystemDirDataBlock* dir_ptr = (FileSystemDirDataBlock*)current_dir_buf;
+	outb(PIC1_COMMAND,PIC_EOI);
+}
+
+/* reinitialize the PIC controllers, giving them specified vector offsets
+   rather than 8h and 70h, as configured by default */
+
+   #define ICW1_ICW4	0x01		/* Indicates that ICW4 will be present */
+   #define ICW1_SINGLE	0x02		/* Single (cascade) mode */
+   #define ICW1_INTERVAL4	0x04		/* Call address interval 4 (8) */
+   #define ICW1_LEVEL	0x08		/* Level triggered (edge) mode */
+   #define ICW1_INIT	0x10		/* Initialization - required! */
+   
+   #define ICW4_8086	0x01		/* 8086/88 (MCS-80/85) mode */
+   #define ICW4_AUTO	0x02		/* Auto (normal) EOI */
+   #define ICW4_BUF_SLAVE	0x08		/* Buffered mode/slave */
+   #define ICW4_BUF_MASTER	0x0C		/* Buffered mode/master */
+   #define ICW4_SFNM	0x10		/* Special fully nested (not) */
+   
+/*
+arguments:
+    offset1 - vector offset for master PIC
+        vectors on the master become offset1..offset1+7
+    offset2 - same for slave PIC: offset2..offset2+7
+*/
+void irq_remap(int offset1, int offset2)
+{
+	outb(PIC1_COMMAND, ICW1_INIT | ICW1_ICW4);  // starts the initialization sequence (in cascade mode)
+	outb(PIC2_COMMAND, ICW1_INIT | ICW1_ICW4);
+	outb(PIC1_DATA, offset1);                 // ICW2: Master PIC vector offset
+	outb(PIC2_DATA, offset2);                 // ICW2: Slave PIC vector offset
+	outb(PIC1_DATA, 4);                       // ICW3: tell Master PIC that there is a slave PIC at IRQ2 (0000 0100)
+	outb(PIC2_DATA, 2);                       // ICW3: tell Slave PIC its cascade identity (0000 0010)
 	
-	FileSystemInode dir_inode = global_inode_table[dir_inode_num];
-	ata_read_blocks(dir_inode.data_block_start, current_dir_buf, 1); // only 1 for now
-	uint32_t files_contained = dir_inode.size / sizeof(FileSystemDirEntry); 
-	for (uint32_t file = 0; file < files_contained; file++) {
-		buf += str_concat(path, buf);
-		buf += str_concat(dir_ptr->contents[file].name, buf);
-		*(buf++) = '\n';
-	}
+	outb(PIC1_DATA, ICW4_8086);               // ICW4: have the PICs use 8086 mode (and not 8080 mode)
+	outb(PIC2_DATA, ICW4_8086);
+
+	// Unmask both PICs.
+	outb(PIC1_DATA, 0);
+	outb(PIC2_DATA, 0);
+}
+
+/* We first remap the interrupt controllers, and then we install
+*  the appropriate ISRs to the correct entries in the IDT. This
+*  is just like installing the exception handlers */
+void irq_install()
+{
+    irq_remap(0x20, 0x28);
+
+    idt_set_gate(32, (unsigned)irq0, 0x08, 0x8E);
+    idt_set_gate(33, (unsigned)irq1, 0x08, 0x8E);
+    idt_set_gate(34, (unsigned)irq2, 0x08, 0x8E);
+    idt_set_gate(35, (unsigned)irq3, 0x08, 0x8E);
+    idt_set_gate(36, (unsigned)irq4, 0x08, 0x8E);
+    idt_set_gate(37, (unsigned)irq5, 0x08, 0x8E);
+    idt_set_gate(38, (unsigned)irq6, 0x08, 0x8E);
+    idt_set_gate(39, (unsigned)irq7, 0x08, 0x8E);
+
+    idt_set_gate(40, (unsigned)irq8, 0x08, 0x8E);
+    idt_set_gate(41, (unsigned)irq9, 0x08, 0x8E);
+    idt_set_gate(42, (unsigned)irq10, 0x08, 0x8E);
+    idt_set_gate(43, (unsigned)irq11, 0x08, 0x8E);
+    idt_set_gate(44, (unsigned)irq12, 0x08, 0x8E);
+    idt_set_gate(45, (unsigned)irq13, 0x08, 0x8E);
+    idt_set_gate(46, (unsigned)irq14, 0x08, 0x8E);
+    idt_set_gate(47, (unsigned)irq15, 0x08, 0x8E);
+}
+
+void pic_disable(void) {
+    outb(PIC1_DATA, 0xff);
+    outb(PIC2_DATA, 0xff);
+}
+
+/* Each of the IRQ ISRs point to this function, rather than
+*  the 'fault_handler' in 'isrs.c'. The IRQ Controllers need
+*  to be told when you are done servicing them, so you need
+*  to send them an "End of Interrupt" command (0x20). There
+*  are two 8259 chips: The first exists at 0x20, the second
+*  exists at 0xA0. If the second controller (an IRQ from 8 to
+*  15) gets an interrupt, you need to acknowledge the
+*  interrupt at BOTH controllers, otherwise, you only send
+*  an EOI command to the first controller. If you don't send
+*  an EOI, you won't raise any more IRQs */
+void irq_handler(struct regs *r)
+{
+    /* This is a blank function pointer */
+    void (*handler)(struct regs *r);
+
+    /* Find out if we have a custom handler to run for this
+    *  IRQ, and then finally, run it */
+    handler = irq_routines[r->int_no - 32];
+    if (handler)
+    {
+        handler(r);
+    }
+
+    /* If the IDT entry that was invoked was greater than 40
+    *  (meaning IRQ8 - 15), then we need to send an EOI to
+    *  the slave controller */
+    if (r->int_no >= 40)
+    {
+        outb(0xA0, 0x20);
+    }
+
+    /* In either case, we need to send an EOI to the master
+    *  interrupt controller too */
+    outb(0x20, 0x20);
+}
+
+void timer_phase(int hz)
+{
+    int divisor = 1193180 / hz;       /* Calculate our divisor */
+    outb(0x43, 0x36);             /* Set our command byte 0x36 */
+    outb(0x40, divisor & 0xFF);   /* Set low byte of divisor */
+    outb(0x40, divisor >> 8);     /* Set high byte of divisor */
+}
+
+/* This will keep track of how many ticks that the system
+*  has been running for */
+int timer_ticks = 0;
+
+/* Handles the timer. In this case, it's very simple: We
+*  increment the 'timer_ticks' variable every time the
+*  timer fires. By default, the timer fires 18.222 times
+*  per second. Why 18.222Hz? Some engineer at IBM must've
+*  been smoking something funky */
+void timer_handler(struct regs *r)
+{
+    // /* Increment our 'tick count' */
+    // timer_ticks++;
+
+    // /* Every 18 clocks (approximately 1 second), we will
+    // *  display a message on the screen */
+    // if (timer_ticks % 100 == 0)
+    // {
+    //     kprintf("One second has passed\n");
+    // }
+}
+
+/* Sets up the system clock by installing the timer handler
+*  into IRQ0 */
+void timer_install()
+{
+    /* Installs 'timer_handler' to IRQ0 */
+	timer_phase(100);
+    irq_install_handler(0, timer_handler);
+}
+
+/* Handles the keyboard interrupt */
+void keyboard_handler(struct regs *r)
+{
+    unsigned char scancode;
+	bool static shift_pressed = false;
+
+    /* Read from the keyboard's data buffer */
+    scancode = inb(0x60);
+
+    /* If the top bit of the byte we read from the keyboard is
+    *  set, that means that a key has just been released */
+    if (scancode & 0x80)
+    {
+		/* You can use this one to see if the user released the
+		*  shift, alt, or control keys... */
+		// Handle key release events for shift keys
+		if (scancode == 0xAA || scancode == 0xB6) { // Left or Right Shift released
+			shift_pressed = false;
+			return;
+		}
+    }
+    else
+    {
+        /* Here, a key was just pressed. Please note that if you
+        *  hold a key down, you will get repeated key press
+        *  interrupts. */
+		if (scancode == 0x2A || scancode == 0x36) { // Left or Right Shift released
+			shift_pressed = true;
+			return;
+		}
+        /* Just to show you how this works, we simply translate
+        *  the keyboard scancode into an ASCII value, and then
+        *  display it to the screen. You can get creative and
+        *  use some flags to see if a shift is pressed and use a
+        *  different layout, or you can add another 128 entries
+        *  to the above layout to correspond to 'shift' being
+        *  held. If shift is held using the larger lookup table,
+        *  you would add 128 to the scancode when you look for it */
+		char output_char = scancode_to_ascii[scancode];
+		if (shift_pressed && output_char >= 'a' && output_char <= 'z') {
+			output_char -= 32; // Convert to uppercase
+		}
+		kputc(output_char);
+    }
 }
 
 void main(void) 
 {
 	// NOTE: This is little endian
 	initialize_terminal();
-	initalize_file_system(false);
-	run_tests();
-	
-	char files[64];
-	list_dir("/", files);
-	kprintf("Listing files in root dir:\n%s", files);
+	// initalize_file_system(false);
+	// run_tests();
 
-	shutdown();
+	gdt_install();
+	idt_install();	
+	isrs_install();
+	irq_install();
+	timer_install();
+	irq_install_handler(1, keyboard_handler);
+
+	int x = 2;
+	kprintf("GDT: %x\n", &gdt);
+	kprintf("IDT: %x\n", &idt);
+	asm volatile ("sti");
+	while(1) {}
+	// kprintf("%d\n", x / 0);
+
+
+	// char files[64];
+	// list_dir("/", files);
+	// kprintf("Listing files in root dir:\n%s", files);
+
+
+	// intialize page allocator
+// #define PAGE_SIZE 0x1000 // 4KiB
+// 	uint32_t first_page_start = (end_kernel & ~0xFFF) + 0x1000;
+	// 2^10 KB, 2^20 MB
+	// kprintf("End of kernel: %x\n", &end_kernel); // 0x0020_F7E0, 2^21 2MB and some change
+
+	// unsigned int cr0, cs, ds, es, fs, gs, ss;
+	
+	// // Read CR0
+	// asm volatile ("mov %%cr0, %0" : "=r"(cr0));
+
+	// // Read segment registers
+	// asm volatile ("mov %%cs, %0" : "=r"(cs));
+	// asm volatile ("mov %%ds, %0" : "=r"(ds));
+	// asm volatile ("mov %%es, %0" : "=r"(es));
+	// asm volatile ("mov %%fs, %0" : "=r"(fs));
+	// asm volatile ("mov %%gs, %0" : "=r"(gs));
+	// asm volatile ("mov %%ss, %0" : "=r"(ss));
+
+	// // Print values
+	// kprintf("CR0: %x\n", cr0);
+	// kprintf("CS:  %x\n", cs);
+	// kprintf("DS:  %x\n", ds);
+	// kprintf("ES:  %x\n", es);
+	// kprintf("FS:  %x\n", fs);
+	// kprintf("GS:  %x\n", gs);
+	// kprintf("SS:  %x\n", ss);
+
+
+
+
+	// while (1) {
+	// 	if (counter == 10) {
+	// 		kprintf("Counter: %d\n", counter);
+	// 		break;
+	// 	}
+	// }
+
+	// Read CR0
+	// asm volatile ("mov %%cr0, %0" : "=r"(cr0));
+
+	// // Read segment registers
+	// asm volatile ("mov %%cs, %0" : "=r"(cs));
+	// asm volatile ("mov %%ds, %0" : "=r"(ds));
+	// asm volatile ("mov %%es, %0" : "=r"(es));
+	// asm volatile ("mov %%fs, %0" : "=r"(fs));
+	// asm volatile ("mov %%gs, %0" : "=r"(gs));
+	// asm volatile ("mov %%ss, %0" : "=r"(ss));
+
+	// // Print values
+	// kprintf("CR0: %x\n", cr0);
+	// kprintf("CS:  %x\n", cs);
+	// kprintf("DS:  %x\n", ds);
+	// kprintf("ES:  %x\n", es);
+	// kprintf("FS:  %x\n", fs);
+	// kprintf("GS:  %x\n", gs);
+	// kprintf("SS:  %x\n", ss);
+
+	// shutdown();
 }

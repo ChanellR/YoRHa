@@ -5,6 +5,10 @@
 
 void panic(const char* msg);
 
+#define ASSERT(exp, msg) do { \
+                    (exp) ? 0 : PANIC("Assertion Error: "#exp " == false, "msg); \
+                    } while (0) \
+
 #define LINE_STR_HELPER(x) #x
 #define LINE_STR(x) LINE_STR_HELPER(x)
 

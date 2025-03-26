@@ -104,9 +104,10 @@ int32_t seek_directory(const char* dir_path) {
 	if (dir_path[0] != '/') {
 		PANIC("relative indexing not implemented");
 	}
-
+ 
+	// TODO: conserving the syntax of referencing the directory like `/dir_name` without the last `/`
 	// NOTE: ignoring root, maybe rethink abstraction
-	uint16_t char_index = 1;
+	uint16_t char_index = 0;
 	while (dir_path[current_char]) {
 		if (dir_path[current_char] == '/') { // done with writing next directory name
 			next_dir[char_index] = '\0'; // end directory name
@@ -136,6 +137,8 @@ int32_t seek_directory(const char* dir_path) {
 		}
 		current_char++;
 	}
+
+	ASSERT(global_inode_table[current_inode_num].file_type == 0, "must be a directory"); 
 	return current_inode_num;
 }
 
@@ -240,6 +243,7 @@ int32_t search_dir(uint32_t dir_inode_num, char* filename) {
 	FileSystemDirDataBlock* dir_ptr = (FileSystemDirDataBlock*)current_dir_buf;
 	
 	FileSystemInode dir_inode = global_inode_table[dir_inode_num];
+	ASSERT(dir_inode.file_type == 0, "must be a directory"); 
 	ata_read_blocks(dir_inode.data_block_start, current_dir_buf, 1); // only 1 for now
 	// kprintf("[search] dir_inode_num.start: %u\n", dir_inode.data_block_start);
 
@@ -260,11 +264,8 @@ int32_t search_dir(uint32_t dir_inode_num, char* filename) {
 }
 
 // -- FILE SYSTEM SYSCALLS --
+int64_t create_filetype(const char* path, bool is_dir) {
 
-// will automatically open the file
-// returns a file descriptor
-int64_t create(const char* path) {
-	
 	// follow path to target directory
 	char dir_path[strlen(path)];
 	char filename[32];
@@ -279,17 +280,17 @@ int64_t create(const char* path) {
 	// kprintf("dir_inode_num: %d\n", dir_inode_num);
 	FileSystemInode dir_inode = global_inode_table[dir_inode_num];
 	// kprintf("dir_inode = {.data_block_start = %u }\n", dir_inode.data_block_start);
-	
+
 	// TODO: ensure that file doesn't already exist
 	if (search_dir(dir_inode_num, filename) != -1) {
 		PANIC("can't create file under same name");
 		return -1; // can't create file under same name
 	}
-	
-	bool is_dir = path[strlen(path) - 1] == '/';
+
+	// bool is_dir = path[strlen(path) - 1] == '/';
 	FileSystemInode file_inode = {.file_type = (is_dir) ? 0 : 1, .parent_inode_num = dir_inode_num, .size = 0};
 	strcpy(file_inode.name, filename);
-	
+
 	// allocate inode for file
 	// kprintf("before inode_bitmap: %b\n", global_ibmap[0]);
 	BitRange range = alloc_bitrange(global_ibmap, 1);
@@ -301,7 +302,7 @@ int64_t create(const char* path) {
 	}
 	uint32_t file_inode_num = range.start;
 	// kprintf("inode_num: %u\n", file_inode_num);
-	
+
 	// allocate data blocks for file
 	range = alloc_bitrange(global_dbmap, 1);
 	if (range.length == 0) {
@@ -309,15 +310,15 @@ int64_t create(const char* path) {
 		return -1;
 	}
 	file_inode.data_block_start = range.start;
-	
+
 	// finally add into inodes
 	global_inode_table[file_inode_num] = file_inode;
 	global_super.used_inodes++;
-	
+
 	// add file to directory
 	uint8_t current_dir_buf[BLOCK_BYTES];
 	FileSystemDirDataBlock* dir_ptr = (FileSystemDirDataBlock*)current_dir_buf;
-	
+
 	// NOTE: we copy dir_inode here from the global table, instead of as reference, 
 	// there may be some bugs where we don't write anything, but we've only been reading
 	// so far until increasing size so this may be ok
@@ -329,7 +330,7 @@ int64_t create(const char* path) {
 	// kprintf("dir_inode = { .name: %s, .data_block_start: %u }\n", dir_inode.name, dir_inode.data_block_start);
 	ata_write_blocks(dir_inode.data_block_start, current_dir_buf, 1); // NOTE: this can break things, if data_block_start is incorrect
 	global_inode_table[dir_inode_num] = dir_inode;
-	
+
 	// now we should allocate a file descriptor
 	range = alloc_bitrange(global_fd_table.bitmap, 1);
 	uint32_t fd_index = range.start;
@@ -338,6 +339,12 @@ int64_t create(const char* path) {
 	global_fd_table.entries[fd_index] = file_descriptor;
 
 	return fd_index; // file descriptor index
+}
+
+// will automatically open the file
+// returns a file descriptor
+int64_t create(const char* path) {
+	return create_filetype(path, false);
 }
 
 int64_t open(const char* path) {
@@ -427,7 +434,6 @@ int64_t unlink(const char* path) {
 	parse_path(path, dir_path, filename);
 	uint32_t dir_inode_num = seek_directory(dir_path);
 
-
 	// read directory for files
 	int32_t file_inode_num = search_dir(dir_inode_num, filename);
 	if (file_inode_num == -1) {
@@ -436,14 +442,34 @@ int64_t unlink(const char* path) {
 	} 
 
 	// remove from directory data
+	uint8_t current_dir_buf[BLOCK_BYTES] = {0};
+	FileSystemInode* dir_inode = &global_inode_table[dir_inode_num];
+	ata_read_blocks(dir_inode->data_block_start, current_dir_buf, 1); // NOTE: only 1 for now
+	FileSystemDirDataBlock* data_block = (FileSystemDirDataBlock*)current_dir_buf;
+
+	// shift all the entries back by 1
+	for (uint32_t entry = 0; entry < dir_inode->size / sizeof(FileSystemDirEntry); entry++) {
+		if(data_block->contents[entry].inode_num == (uint32_t)file_inode_num) {
+			while (entry < dir_inode->size / sizeof(FileSystemDirEntry)) {
+				data_block->contents[entry] = data_block->contents[entry+1];
+				entry++;
+			}
+			break;
+		}
+	}
+	dir_inode->size -= sizeof(FileSystemDirEntry); // reduce the size
+	ata_write_blocks(dir_inode->data_block_start, current_dir_buf, 1); // NOTE: this can break things, if data_block_start is incorrect
 	
-	// unallocate data blocks
-	// FileSystemInode file_inode = global_inode_table[file_inode_num];
+	// unallocate data blocks 
+	FileSystemInode file_inode = global_inode_table[file_inode_num];
+	BitRange range = {.start = file_inode.data_block_start, .length = 1};
+	dealloc_bitrange(global_dbmap, range);
 
 	// unallocate inode
+	range.start = file_inode_num;
+	dealloc_bitrange(global_ibmap, range); // don't need to clear the entry
 	
-	PANIC("Not Implemented");
-	return -1;
+	return 0;
 }
 
 int64_t seek(int64_t fd, uint64_t pos) {
@@ -457,10 +483,13 @@ int64_t seek(int64_t fd, uint64_t pos) {
 	return pos;
 }
 
-uint32_t mkdir(const char* path) {
-	PANIC("Not Implemented");
-	UNUSED(path);
-	return -1;
+int32_t mkdir(const char* path) {
+	int32_t fd = create_filetype(path, true);
+	if (fd == -1) {
+		panic(error_msg);
+	}
+	close(fd);
+	return 0;
 }
 
 // outputs directories to the buffer

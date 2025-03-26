@@ -37,12 +37,7 @@ void main(void)
 	// NOTE: This is little endian
 	initialize_terminal();
 	initalize_file_system(false);
-	run_tests();
-
-	// char test[6] = "";
-	// strcpy(test, "Hello");
-	// kprintf(test);
-
+	
 	gdt_install();
 	idt_install();	
 	isrs_install();
@@ -50,29 +45,8 @@ void main(void)
 	timer_install();
 	keyboard_install();
 	enable_interrupts();
-
-	// int x = 2;
-	// kprintf("GDT: %x\n", &gdt);
-	// kprintf("IDT: %x\n", &idt);
-	// asm volatile ("sti");
-
-	// asm volatile ("syscall");
-	// asm volatile ("push %eax; push $4; mov $2, %eax; int $80; pop %eax");
-	// syscall(0x123);
-	// while(1) {}
-	// kprintf("%d\n", x / 0);
-
-	// int fd = create("/hello");
-	// if (fd == -1) {
-	// 	panic(error_msg);
-	// }
-	// write(fd, "Hello", 6);
-	// close(fd);
-
-	// char files[64];
-	// list_dir("/", files);
-	// kprintf("Listing files in root dir:\n%s", files);
-
+	
+	run_tests();
 
 	// intialize page allocator
 // #define PAGE_SIZE 0x1000 // 4KiB

@@ -132,6 +132,38 @@ bool test_alloc_bitrange() {
     return passing;
 }
 
+bool test_filesystem() {
+	bool passing = true;
+	int fd = create("/hello");
+	if (fd == -1) {
+		panic(error_msg);
+	}
+	write(fd, "Hello", 6);
+	close(fd);
+
+	if (mkdir("/dir") == -1) {
+		panic(error_msg);
+	}
+
+	fd = create("/dir/goodbye");
+	if (fd == -1) {
+		panic(error_msg);
+	}
+	write(fd, "bye", 6);
+	close(fd);
+
+	char files[64];
+	list_dir("/dir/", files);
+	kprintf("Listing files in root dir:\n%s", files);
+
+	unlink("/dir/goodbye");
+
+	char new_file[64];
+	list_dir("/dir/", new_file);
+	kprintf("Listing files in root dir:\n%s", new_file);
+	return passing;
+}
+
 void run_tests(void) {
     kprintf("Running Tests...\n");
     
@@ -149,6 +181,9 @@ void run_tests(void) {
 
     kprintf("test_alloc_bitrange...");
     kprintf((test_alloc_bitrange()) ? "OK\n" : "FAIL\n");
+
+    // kprintf("test_filesystem...");
+    // kprintf((test_filesystem()) ? "OK\n" : "FAIL\n");
     
     kprintf("\n");
 }

@@ -130,9 +130,6 @@ typedef struct {
     uint32_t length;           ///< Length of the range in bits.
 } BitRange;
 
-// error message buffer for everyone to use
-// char error_msg[128] = {0};
-
 /**
  * @brief Initializes the file system.
  * 
@@ -225,7 +222,7 @@ int64_t seek(int64_t fd, uint64_t pos);
  * @param path The absolute path of the directory to create.
  * @return -1 on failure, or 0 on success.
  */
-uint32_t mkdir(const char* path);
+int32_t mkdir(const char* path);
 
 /**
  * @brief Lists the contents of a directory.

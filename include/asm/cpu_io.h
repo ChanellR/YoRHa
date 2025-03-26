@@ -1,5 +1,5 @@
-#ifndef IO_H
-#define IO_H
+#ifndef CPU_IO_H
+#define CPU_IO_H
 
 #include <stdint.h>
 
@@ -28,4 +28,4 @@ static inline void rep_insw(uint16_t port, void *addr, uint32_t count) {
     asm volatile ("rep insw" : "+D"(addr), "+c"(count) : "d"(port) : "memory");
 }
 
-#endif // IO_H
+#endif // CPU_IO_H

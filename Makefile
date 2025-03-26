@@ -45,7 +45,7 @@ debug: $(KERNEL_BIN) disk/hd.img
 clean_all: clean clean_disk
 
 clean:
-	@rm -f $(KERNEL_OBJS) $(KERNEL_ELF) $(KERNEL_BIN)
+	@rm -rf $(BUILD_DIR) 
 
 clean_disk:
 	@rm -f disk/hd.img

@@ -96,7 +96,7 @@ void memset(void* dst, uint8_t val, size_t count) {
     to the memory block pointed by destination. Copying takes place as if
     an intermediate buffer were used, allowing the destination and source to overlap.
 */
-void memmove(void* dst, const void* src, size_t count) {
+void* memmove(void* dst, const void* src, size_t count) {
     uint8_t* d = (uint8_t*)dst;
     const uint8_t* s = (const uint8_t*)src;
 
@@ -111,6 +111,7 @@ void memmove(void* dst, const void* src, size_t count) {
             d[i - 1] = s[i - 1];
         }
     }
+	return dst;
 }
 
 int strcmp(const char* str1, const char* str2) {

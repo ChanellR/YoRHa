@@ -122,13 +122,6 @@ typedef struct {
 	FileDescriptorEntry entries[32]; // only 16 per process for now
 } FileDescriptorTable;
 
-/**
- * @brief Structure representing a range of bits in a bitmap.
- */
-typedef struct {
-    uint32_t start;            ///< Starting bit of the range.
-    uint32_t length;           ///< Length of the range in bits.
-} BitRange;
 
 /**
  * @brief Initializes the file system.
@@ -138,22 +131,6 @@ typedef struct {
  */
 bool initalize_file_system(bool force_format);
 
-/**
- * @brief Allocates a range of bits in a bitmap.
- * 
- * @param bitmap The bitmap to allocate from.
- * @param count The number of contiguous bits to allocate.
- * @return The allocated bit range.
- */
-BitRange alloc_bitrange(uint32_t* bitmap, uint32_t count);
-
-/**
- * @brief Deallocates a range of bits in a bitmap.
- * 
- * @param bitmap The bitmap to deallocate from.
- * @param range The range of bits to deallocate.
- */
-void dealloc_bitrange(uint32_t* bitmap, BitRange range);
 
 /**
  * @brief Creates a new file or directory.
@@ -246,19 +223,5 @@ void list_dir(const char* path, char* buf);
  * It ensures that all metadata changes are saved to persistent storage before the system shuts down.
  */
 void shutdown();
-
-/**
- * @brief Applies a bit range operation on a bitmap.
- *
- * This function modifies a bitmap by setting or clearing a range of bits
- * specified by the `range` parameter. The operation is determined by the
- * `set` parameter.
- *
- * @param bitmap Pointer to the bitmap to be modified.
- * @param range The range of bits to be set or cleared.
- * @param set If true, the bits in the specified range will be set (1).
- *            If false, the bits in the specified range will be cleared (0).
- */
-void apply_bitrange(uint32_t* bitmap, BitRange range, bool set);
 
 #endif // FS_H

@@ -65,7 +65,7 @@ bool initalize_file_system(bool force_format) {
 	// clear occupation bitmaps
 	global_ibmap[0] |= 1 << 31;
 	// global_dbmap[0] |= 1 << 31;
-	alloc_bitrange(global_dbmap, DATA_REGION_START + 1); // NOTE: permanently allocates all blocks used for metadata, and the first
+	alloc_bitrange(global_dbmap, BLOCK_BYTES * 8, DATA_REGION_START + 1, false); // NOTE: permanently allocates all blocks used for metadata, and the first
 	ata_write_blocks(global_super.i_bmap_start, (uint8_t*)global_ibmap, 1);
 	ata_write_blocks(global_super.d_bmap_start, (uint8_t*)global_dbmap, 1);
 
@@ -160,80 +160,6 @@ void parse_path(const char* path, char* dir_path, char* filename) {
 }
 
 
-// for alloc
-void apply_bitrange(uint32_t* bitmap, BitRange range, bool set) {
-	uint32_t start_word = range.start / (sizeof(uint32_t) * 8); // 32 bits in uint32_t
-	uint8_t start_bit = range.start % 32;
-	uint32_t end_word = (range.start + range.length) / (sizeof(uint32_t) * 8); // 32 bits in uint32_t
-	uint8_t end_bit = (range.start + range.length) % 32; // not inclusive of this bit
-	// kprintf("\nstart_word:%u start_bit:%u end_word:%u end_bit:%u\n", start_word, start_bit, end_word, end_bit);
-	for (uint16_t word = start_word; word <= end_word; word++) {
-		if (start_word == end_word) {
-			// BUG: on 1000_0000, ors with 0x7fwfwfwf
-			// kprintf("oring with 0x%x\n", (uint32_t)(((1 << (32 - start_bit)) - 1) ^ ((1 << (32 - end_bit)) - 1)));
-			uint32_t left = (start_bit) ? ((1 << (32 - start_bit)) - 1) : ~0;
-			uint32_t right = ((1 << (32 - end_bit)) - 1);
-			if (set) {
-				bitmap[word] |= left ^ right;
-			} else {
-				bitmap[word] &= ~(left ^ right);
-			}
-			// kprint("in same\n");
-			break;
-		}
-
-		uint32_t coeff;
-		if (word == start_word) {
-			// going from left to right 0 -> 31
-			coeff = (start_bit) ? (1 << (32 - start_bit)) - 1: ~0b0;
-		} else if (word == end_word) {
-			coeff = (end_bit) ? ~((1 << (32 - end_bit)) - 1): 0;
-		} else {
-			coeff = ~0; // set everything
-		}
-
-		if (set) {
-			bitmap[word] |= coeff;
-		} else {
-			bitmap[word] &= ~coeff;
-		}
-	}
-}
-
-// TODO: make more efficient, use words
-// finds the first contiguous array of block_count blocks in the bitmap
-// count down from the MSB
-// assumes bitmap is a block long
-BitRange alloc_bitrange(uint32_t* bitmap, uint32_t count) {
-    BitRange range = { .start = 0, .length = 0 };
-	uint32_t curr_length = 0;
-	uint32_t curr_start = 0; // this needs to be the nearest zero behind us
-    for (uint32_t i = 0; i < BLOCK_BYTES/4; i++) {  // Iterate through bytes
-		for (int8_t bit = 31; bit >= 0; bit--) {
-			// TODO: implement in assembly
-			if (bitmap[i] & (1 << bit)) {
-				curr_start = (bit) ? i*32 + (31 - (bit - 1)) : (i+1)*32;
-				curr_length = 0;
-			} else {
-				curr_length++;
-			}
-			if (curr_length == count) {
-				range.start = curr_start;
-				range.length = curr_length;
-				// allocate range
-				apply_bitrange(bitmap, range, true);
-				return range;
-			}
-		}
-    }
-
-    return range; // No space found
-}
-
-void dealloc_bitrange(uint32_t* bitmap, BitRange range) {
-	apply_bitrange(bitmap, range, false);
-}
-
 // return -1 if can't find file
 // returns the inode corresponding to the file within a given
 // directory
@@ -293,7 +219,7 @@ int64_t create_filetype(const char* path, bool is_dir) {
 
 	// allocate inode for file
 	// kprintf("before inode_bitmap: %b\n", global_ibmap[0]);
-	BitRange range = alloc_bitrange(global_ibmap, 1);
+	BitRange range = alloc_bitrange(global_ibmap, BLOCK_BYTES * 8, 1, false);
 	// kprintf("after inode_bitmap: %b\n", global_ibmap[0]);
 	if (range.length == 0) { // can't allocate inode
 		// shouldn't need to dealloc
@@ -304,7 +230,7 @@ int64_t create_filetype(const char* path, bool is_dir) {
 	// kprintf("inode_num: %u\n", file_inode_num);
 
 	// allocate data blocks for file
-	range = alloc_bitrange(global_dbmap, 1);
+	range = alloc_bitrange(global_dbmap, BLOCK_BYTES * 8, 1, false);
 	if (range.length == 0) {
 		PANIC("can't allocate data blocks");
 		return -1;
@@ -332,7 +258,7 @@ int64_t create_filetype(const char* path, bool is_dir) {
 	global_inode_table[dir_inode_num] = dir_inode;
 
 	// now we should allocate a file descriptor
-	range = alloc_bitrange(global_fd_table.bitmap, 1);
+	range = alloc_bitrange(global_fd_table.bitmap, BLOCK_BYTES * 8, 1, false);
 	uint32_t fd_index = range.start;
 	FileDescriptorEntry file_descriptor = {.write_pos = 0, .read_pos = 0, .inode_num = file_inode_num, .index = fd_index};
 	strcpy(file_descriptor.name, filename);
@@ -368,7 +294,7 @@ int64_t open(const char* path) {
 	// kprintf("[open] file_inode_num: %u\n", file_inode_num);
 	// kprintf("Start: %u\n", global_inode_table[file_inode_num].data_block_start);
 	// create file descriptor
-	BitRange range = alloc_bitrange(global_fd_table.bitmap, 1);
+	BitRange range = alloc_bitrange(global_fd_table.bitmap, BLOCK_BYTES * 8, 1, false);
 	uint32_t fd_index = range.start;
 	FileDescriptorEntry file_descriptor = {.write_pos = 0, .read_pos = 0, .inode_num = file_inode_num, .index = fd_index};
 	strcpy(file_descriptor.name, filename);

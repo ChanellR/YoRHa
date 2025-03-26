@@ -4,6 +4,7 @@
 #include <ata.h>
 #include <util.h>
 #include <io.h>
+#include <alloc.h>
 
 
 bool test_ata_pio(void) {
@@ -108,13 +109,13 @@ bool test_alloc_bitrange() {
     bool passing = true;
     uint32_t bitmap[2] = {0};
     BitRange result;
-    result = alloc_bitrange(bitmap, 2);
+    result = alloc_bitrange(bitmap, 64, 2, false);
     passing &= result.start == 0 && result.length == 2;
     // kprintf("result = {.start = %u, .length = %u}\n", result.start, result.length);
-    result = alloc_bitrange(bitmap, 8);
+    result = alloc_bitrange(bitmap, 64, 8, false);
     // kprintf("result = {.start = %u, .length = %u}\n", result.start, result.length);
     passing &= result.start == 2 && result.length == 8;
-    result = alloc_bitrange(bitmap, 32);
+    result = alloc_bitrange(bitmap, 64, 32, false);
     // kprintf("result = {.start = %u, .length = %u}\n", result.start, result.length);
     // kprintf("bitmap = %b %b\n", bitmap[0], bitmap[1]);
     passing &= result.start == 10 && result.length == 32;
@@ -124,7 +125,7 @@ bool test_alloc_bitrange() {
     result.length = 8;
     dealloc_bitrange(bitmap, result);
     // kprintf("bitmap = %b %b\n", bitmap[0], bitmap[1]);
-    result = alloc_bitrange(bitmap, 6);
+    result = alloc_bitrange(bitmap, 64, 6, false);
     // kprintf("result = {.start = %u, .length = %u}\n", result.start, result.length);
     passing &= result.start == 2 && result.length == 6;
     // kprintf("bitmap = %b %b\n", bitmap[0], bitmap[1]);
@@ -164,6 +165,28 @@ bool test_filesystem() {
 	return passing;
 }
 
+uint32_t* test_malloc_part() {
+	uint32_t* a = (uint32_t*)kmalloc(3);
+	kprintf("a: 0x%x, *a: 0x%x\n", a, *a);
+	*a = 4;
+	kprintf("a: 0x%x, *a: 0x%x\n", a, *a);
+	return a;
+}
+
+bool test_malloc() {
+	bool passing = true;
+	uint32_t* a = test_malloc_part();
+	kprintf("a: 0x%x, *a: 0x%x\n", a, *a);
+	kfree(a);
+	void* b = kmalloc(3);
+	void* c = kmalloc(1);
+	kprintf("next_addr: 0x%x\n", b);
+	kprintf("next_addr: 0x%x\n", c);
+	kfree(b);
+	kfree(c);
+	return passing;
+}
+
 void run_tests(void) {
     kprintf("Running Tests...\n");
     
@@ -184,6 +207,9 @@ void run_tests(void) {
 
     // kprintf("test_filesystem...");
     // kprintf((test_filesystem()) ? "OK\n" : "FAIL\n");
+
+    // kprintf("test_malloc...");
+    // kprintf((test_malloc()) ? "OK\n" : "FAIL\n");
     
     kprintf("\n");
 }

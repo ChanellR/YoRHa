@@ -7,9 +7,8 @@
 #include <ata.h>
 #include <util.h>
 #include <io.h>
-
-void run_tests(void);
-extern uint32_t end_kernel;
+#include <tests.h>
+#include <alloc.h>
 
 // can have normal Registers struct passing, then in the isr80, we jump, put &r in eax, push, put the pointer 
 // to the beginning of the stack before the saving of the registers
@@ -32,10 +31,12 @@ void syscall_handler(void* arguments, Registers *r) {
 	kprintf("call id: 0x%x\n", r->err_code);
 }
 
+
 void main(void) 
 {
 	// NOTE: This is little endian
 	initialize_terminal();
+	initialize_allocator();
 	initalize_file_system(false);
 	
 	gdt_install();
@@ -45,14 +46,12 @@ void main(void)
 	timer_install();
 	keyboard_install();
 	enable_interrupts();
-	
+
 	run_tests();
 
-	// intialize page allocator
-// #define PAGE_SIZE 0x1000 // 4KiB
-// 	uint32_t first_page_start = (end_kernel & ~0xFFF) + 0x1000;
 	// 2^10 KB, 2^20 MB
-	// kprintf("End of kernel: %x\n", &end_kernel); // 0x0020_F7E0, 2^21 2MB and some change
+	kprintf("End of kernel: %x\n", &end_kernel); // 0x0020_F7E0, 2^21 2MB and some change
+
 
 	shutdown();
 }

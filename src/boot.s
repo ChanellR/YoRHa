@@ -383,14 +383,54 @@ isr31:
 	pushl $31
 	jmp isr_common_stub
 
+.global isr80
+# 80: syscall
+isr80:
+    cli
+    push  %eax # push syscall number
+    push  $80
+    jmp syscall_stub
 
-# We call a C function in here. We need to let the assembler know
-# that '_fault_handler' exists in another file
-.extern fault_handler
+
+.extern syscall_handler
+syscall_stub:
+
+	pusha # pushes all regs ax,cx,...,si,di
+	push %ds
+	push %es
+	push %fs
+	push %gs
+
+	movw $0x10, %ax
+	movw %ax, %ds
+	movw %ax, %es
+	movw %ax, %fs
+	movw %ax, %gs
+	mov %esp, %eax
+	push %eax
+
+	mov %esp, %eax # NOTE: may have to change this if its going from user to kernel, adds ss, ...
+	add $72, %eax # 18 * 4 bytes
+	push %eax # trying to deference parameters
+	
+	call syscall_handler
+
+	pop %eax
+
+	pop %eax
+	pop %gs
+	pop %fs
+	pop %es
+	pop %ds
+	popa
+
+	add $8, %esp
+	iret
 
 # This is our common ISR stub. It saves the processor state, sets
 # up for kernel mode segments, calls the C-level fault handler,
 # and finally restores the stack frame.
+.extern isr_handler
 isr_common_stub:
 
 	pusha # pushes all regs ax,cx,...,si,di
@@ -407,7 +447,7 @@ isr_common_stub:
 	movl %esp, %eax
 	pushl %eax
 	
-	call fault_handler
+	call isr_handler
 
 	popl %eax
 	popl %gs

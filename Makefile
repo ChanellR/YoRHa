@@ -3,7 +3,7 @@ CC=i686-elf-gcc
 AS=i686-elf-as
 LD=i686-elf-ld
 CFLAGS=-std=gnu99 -ffreestanding -O2 -Wall -Wextra -Iinclude -g 
-LDFLAGS=-T src/linker.ld -g
+LDFLAGS=-T linker.ld -g
 
 # Directories
 SRC_DIR=src
@@ -37,10 +37,10 @@ disk/hd.img:
 	qemu-img create -f raw disk/hd.img 1M
 	
 run: $(KERNEL_BIN) disk/hd.img
-	$(QEMU) -m 512M -drive file=disk/hd.img,format=raw -kernel $(KERNEL_BIN)
+	$(QEMU) -m 1024M -drive file=disk/hd.img,format=raw -kernel $(KERNEL_BIN)
 
 debug: $(KERNEL_BIN) disk/hd.img
-	$(QEMU) -s -S -m 512M -drive file=disk/hd.img,format=raw -kernel $(KERNEL_BIN) -display gtk,zoom-to-fit=on -d int
+	$(QEMU) -s -S -m 1024M -drive file=disk/hd.img,format=raw -kernel $(KERNEL_BIN) -display gtk,zoom-to-fit=on -d int
 
 clean_all: clean clean_disk
 

@@ -1,12 +1,10 @@
+#include <stdbool.h>
+#include <string.h>
+
+#include <util.h>
 #include <vga.h>
 #include <ata.h>
-#include <stdbool.h>
 
-#define LINE_STR_HELPER(x) #x
-#define LINE_STR(x) LINE_STR_HELPER(x)
-
-#define PUSH_ERROR(msg) str_copy(__FILE__":"LINE_STR(__LINE__)": error:" msg, error_msg)
-#define PANIC(msg) panic("\n"__FILE__":"LINE_STR(__LINE__)": panic: " msg)
 
 #define KEYBOARD_DATA_PORT 0x60
 #define KEYBOARD_STATUS_PORT 0x64
@@ -106,11 +104,11 @@ bool test_intlen(void) {
 	return !failing;
 }
 
-bool test_strcomp(void) {
+bool test_strcmp(void) {
 	bool passing = true;
-	passing &= strcomp("abc", "ab") == false;
-	passing &= strcomp("abc", "abc") == true;
-	passing &= strcomp("", "") == true;
+	passing &= strcmp("abc", "ab") > 0;
+	passing &= strcmp("abc", "abc") == 0;
+	passing &= strcmp("", "") == 0;
 	return passing;
 }
 
@@ -187,7 +185,7 @@ bool initalize_file_system(bool force_format) {
 	ata_read_sectors(0, 1, buffer); // NOTE: doesn't work when I use read block, because it overflows
 	
 	global_super = *(FileSystemSuper*)buffer;
-	if (!force_format && strcomp(global_super.format_indicator, "Yorha")) {
+	if (!force_format && strcmp(global_super.format_indicator, "Yorha")) {
 		kprintf("Disk Recognized\n");
 		// TODO: load structures
 		// kprintf("before inode_bitmap: %b\n", global_ibmap[0]);		
@@ -202,7 +200,7 @@ bool initalize_file_system(bool force_format) {
 	// formatting disk
 	
 	// fill super
-	str_copy("Yorha", global_super.format_indicator);
+	strcpy("Yorha", global_super.format_indicator);
 	global_super.disk_size = ata_get_disk_size();
 	global_super.sector_count = global_super.disk_size / SECTOR_BYTES;
 	global_super.block_count = 64; // only starting with 64
@@ -261,7 +259,9 @@ int32_t seek_directory(const char* dir_path) {
 	// must end and begin with '/' (absolute path to directory)
 	char next_dir[32] = ""; // maximum 32 character name
 	uint32_t current_inode_num = 0; // root directory
-	char* current_char = dir_path + 1; // skip the '/'
+	// char* current_char = dir_path + 1; // skip the '/'
+	size_t current_char = 1; // skip the '/'
+	kprintf("dir_path: %s\n", dir_path);
 
 	uint8_t current_dir_buf[BLOCK_BYTES];
 	FileSystemDirDataBlock* dir_ptr = (FileSystemDirDataBlock*)current_dir_buf;
@@ -272,8 +272,8 @@ int32_t seek_directory(const char* dir_path) {
 
 	// NOTE: ignoring root, maybe rethink abstraction
 	uint16_t char_index = 1;
-	while (*current_char) {
-		if (*current_char == '/') { // done with writing next directory name
+	while (dir_path[current_char]) {
+		if (dir_path[current_char] == '/') { // done with writing next directory name
 			next_dir[char_index] = '\0'; // end directory name
 			// gather previous dir data
 			FileSystemInode dir_inode = global_inode_table[current_inode_num];
@@ -284,7 +284,7 @@ int32_t seek_directory(const char* dir_path) {
 			int32_t file_inode_number = -1;
 			// for (uint32_t file = 0; file < dir_ptr->files_contained; file++) {
 			for (uint32_t file = 0; file < files_contained; file++) {
-				if (strcomp(dir_ptr->contents[file].name, next_dir)) {
+				if (strcmp(dir_ptr->contents[file].name, next_dir)) {
 					// TODO: must ensure this is a valid inode being used
 					file_inode_number = dir_ptr->contents[file].inode_num;
 					break;
@@ -297,7 +297,7 @@ int32_t seek_directory(const char* dir_path) {
 			current_inode_num = file_inode_number;
 			char_index = 0;
 		} else {
-			next_dir[char_index++] = *current_char;
+			next_dir[char_index++] = dir_path[current_char];
 		}
 		current_char++;
 	}
@@ -306,7 +306,7 @@ int32_t seek_directory(const char* dir_path) {
 
 void parse_path(const char* path, char* dir_path, char* filename) {
 
-	str_copy(path, dir_path);
+	strcpy(path, dir_path);
 	char* path_cursor = path;
 	uint32_t last_slash = 0;
 	while (*path_cursor) {
@@ -316,7 +316,7 @@ void parse_path(const char* path, char* dir_path, char* filename) {
 		path_cursor++;
 	}
 
-	str_copy(dir_path + last_slash + 1, filename); // copy tail
+	strcpy(dir_path + last_slash + 1, filename); // copy tail
 	dir_path[last_slash + 1] = '\0'; // end at slash
 }
 
@@ -471,7 +471,7 @@ int32_t search_dir(uint32_t dir_inode_num, char* filename) {
 	// look at the current_inode directory for current_char
 	for (uint32_t file = 0; file < files_contained; file++) {
 		// kprintf("found: %s, looking_for: %s\n", dir_ptr->contents[file].name, filename);
-		if (strcomp(dir_ptr->contents[file].name, filename)) {
+		if (strcmp(dir_ptr->contents[file].name, filename)) {
 			// TODO: must ensure this is a valid inode being used
 			// kprintf("found\n");
 			return dir_ptr->contents[file].inode_num;
@@ -488,7 +488,7 @@ int32_t search_dir(uint32_t dir_inode_num, char* filename) {
 int64_t create(const char* path) {
 	
 	// follow path to target directory
-	char dir_path[str_len(path)];
+	char dir_path[strlen(path)];
 	char filename[32];
 	parse_path(path, dir_path, filename);
 	// kprintf("dir: %s, filename: %s, path: %s\n", dir_path, filename, path);
@@ -508,9 +508,9 @@ int64_t create(const char* path) {
 		return -1; // can't create file under same name
 	}
 	
-	bool is_dir = path[str_len(path) - 1] == '/';
+	bool is_dir = path[strlen(path) - 1] == '/';
 	FileSystemInode file_inode = {.file_type = (is_dir) ? 0 : 1, .parent_inode_num = dir_inode_num, .size = 0};
-	str_copy(filename, file_inode.name);
+	strcpy(filename, file_inode.name);
 	
 	// allocate inode for file
 	// kprintf("before inode_bitmap: %b\n", global_ibmap[0]);
@@ -546,7 +546,7 @@ int64_t create(const char* path) {
 	ata_read_blocks(dir_inode.data_block_start, current_dir_buf, 1); // NOTE: only 1 for now
 	FileSystemDirEntry* new_entry = &(dir_ptr->contents[dir_inode.size / sizeof(FileSystemDirEntry)]);
 	new_entry->inode_num = file_inode_num;
-	str_copy(filename, new_entry->name);
+	strcpy(filename, new_entry->name);
 	dir_inode.size += sizeof(FileSystemDirEntry);
 	// kprintf("dir_inode = { .name: %s, .data_block_start: %u }\n", dir_inode.name, dir_inode.data_block_start);
 	ata_write_blocks(dir_inode.data_block_start, current_dir_buf, 1); // NOTE: this can break things, if data_block_start is incorrect
@@ -556,7 +556,7 @@ int64_t create(const char* path) {
 	range = alloc_bitrange(global_fd_table.bitmap, 1);
 	uint32_t fd_index = range.start;
 	FileDescriptorEntry file_descriptor = {.write_pos = 0, .read_pos = 0, .inode_num = file_inode_num, .index = fd_index};
-	str_copy(filename, file_descriptor.name);
+	strcpy(filename, file_descriptor.name);
 	global_fd_table.entries[fd_index] = file_descriptor;
 
 	return fd_index; // file descriptor index
@@ -567,7 +567,7 @@ int64_t open(const char* path) {
 	// can't open directories
 
 	// follow path to target directory
-	char dir_path[str_len(path)];
+	char dir_path[strlen(path)];
 	char filename[32];
 	parse_path(path, dir_path, filename);
 
@@ -586,7 +586,7 @@ int64_t open(const char* path) {
 	BitRange range = alloc_bitrange(global_fd_table.bitmap, 1);
 	uint32_t fd_index = range.start;
 	FileDescriptorEntry file_descriptor = {.write_pos = 0, .read_pos = 0, .inode_num = file_inode_num, .index = fd_index};
-	str_copy(filename, file_descriptor.name);
+	strcpy(filename, file_descriptor.name);
 	global_fd_table.entries[fd_index] = file_descriptor;
 
 	return fd_index;
@@ -644,7 +644,7 @@ uint64_t write(int64_t fd, const void* buf, uint32_t count) {
 
 int64_t unlink(const char* path) {
 
-	char dir_path[str_len(path)];
+	char dir_path[strlen(path)];
 	char filename[32];
 	parse_path(path, dir_path, filename);
 	uint32_t dir_inode_num = seek_directory(dir_path);
@@ -687,9 +687,13 @@ uint32_t mkdir(const char* path) {
 // outputs directories to the buffer
 void list_dir(const char* path, char* buf) {
 	
-	char dir_path[str_len(path)];
+	char dir_path[strlen(path) + 1];
 	char filename[32];
+	kprintf("Path: %s\n", path);
 	parse_path(path, dir_path, filename);
+	kprintf("Dir Path: %s\n", dir_path);
+	kprintf("Filename: %s\n", filename);
+
 	uint32_t dir_inode_num = seek_directory(dir_path);
 	uint8_t current_dir_buf[BLOCK_BYTES];
 	FileSystemDirDataBlock* dir_ptr = (FileSystemDirDataBlock*)current_dir_buf;
@@ -698,8 +702,8 @@ void list_dir(const char* path, char* buf) {
 	ata_read_blocks(dir_inode.data_block_start, current_dir_buf, 1); // only 1 for now
 	uint32_t files_contained = dir_inode.size / sizeof(FileSystemDirEntry); 
 	for (uint32_t file = 0; file < files_contained; file++) {
-		buf += str_concat(path, buf);
-		buf += str_concat(dir_ptr->contents[file].name, buf);
+		buf += strcat(path, buf);
+		buf += strcat(dir_ptr->contents[file].name, buf);
 		*(buf++) = '\n';
 	}
 }
@@ -713,8 +717,8 @@ void run_tests(void) {
 	kprintf("test_intlen...");
 	kprintf((test_intlen()) ? "OK\n" : "FAIL\n");
 	
-	kprintf("test_strcomp...");
-	kprintf((test_strcomp()) ? "OK\n" : "FAIL\n");
+	kprintf("test_strcmp...");
+	kprintf((test_strcmp()) ? "OK\n" : "FAIL\n");
 
 	kprintf("test_apply_bitrange...");
 	kprintf((test_apply_bitrange()) ? "OK\n" : "FAIL\n");
@@ -1023,7 +1027,7 @@ struct regs
 *  endless loop. All ISRs disable interrupts while they are being
 *  serviced as a 'locking' mechanism to prevent an IRQ from
 *  happening and messing up kernel data structures */
-void fault_handler(struct regs *r)
+void isr_handler(struct regs *r)
 {
 	kprint("Entered\n");
     if (r->int_no < 32)
@@ -1032,6 +1036,10 @@ void fault_handler(struct regs *r)
         kprintf(" Exception. System Halted!\n");
         for (;;);
     }
+	
+	if (r->int_no == 80) {
+		kprintf("System call: %d\n", r->err_code);
+	}
 }
 
 
@@ -1053,6 +1061,7 @@ extern void irq12();
 extern void irq13();
 extern void irq14();
 extern void irq15();
+extern void isr80();
 
 /* This array is actually an array of function pointers. We use
 *  this to handle custom IRQ handlers for a given IRQ */
@@ -1153,6 +1162,8 @@ void irq_install()
     idt_set_gate(45, (unsigned)irq13, 0x08, 0x8E);
     idt_set_gate(46, (unsigned)irq14, 0x08, 0x8E);
     idt_set_gate(47, (unsigned)irq15, 0x08, 0x8E);
+
+	idt_set_gate(80, (unsigned)isr80, 0x08, 0x8E);
 }
 
 void pic_disable(void) {
@@ -1281,12 +1292,38 @@ void keyboard_handler(struct regs *r)
     }
 }
 
+
+
+// can have normal regs struct passing, then in the isr80, we jump, put &r in eax, push, put the pointer 
+// to the beginning of the stack before the saving of the registers
+// and then use that to dereference a struct with the arguments corresponding to the syscall
+inline void syscall(uint32_t i) {
+	asm volatile (
+		"push %%eax;"
+		"push $0;"
+		"mov %0, %%eax;"
+		"int $80;"
+		"pop %%eax;"
+		: 
+		: "m"(i)
+	);
+}
+
+/*
+	User will call to execute kernel only codings 
+*/
+void syscall_handler(void* arguments, struct regs *r) {
+	uint32_t val = *((uint32_t*)arguments);
+	kprintf("Value: 0x%x\n", val);
+	kprintf("call id: 0x%x\n", r->err_code);
+}
+
 void main(void) 
 {
 	// NOTE: This is little endian
 	initialize_terminal();
-	// initalize_file_system(false);
-	// run_tests();
+	initalize_file_system(false);
+	run_tests();
 
 	gdt_install();
 	idt_install();	
@@ -1294,18 +1331,23 @@ void main(void)
 	irq_install();
 	timer_install();
 	irq_install_handler(1, keyboard_handler);
+	// irq_install_handler(80, isr80);
 
-	int x = 2;
-	kprintf("GDT: %x\n", &gdt);
-	kprintf("IDT: %x\n", &idt);
-	asm volatile ("sti");
-	while(1) {}
+	// int x = 2;
+	// kprintf("GDT: %x\n", &gdt);
+	// kprintf("IDT: %x\n", &idt);
+	// asm volatile ("sti");
+
+	// asm volatile ("syscall");
+	// asm volatile ("push %eax; push $4; mov $2, %eax; int $80; pop %eax");
+	// syscall(0x123);
+	// while(1) {}
 	// kprintf("%d\n", x / 0);
 
 
-	// char files[64];
-	// list_dir("/", files);
-	// kprintf("Listing files in root dir:\n%s", files);
+	char files[64];
+	list_dir("/", files);
+	kprintf("Listing files in root dir:\n%s", files);
 
 
 	// intialize page allocator
@@ -1314,57 +1356,5 @@ void main(void)
 	// 2^10 KB, 2^20 MB
 	// kprintf("End of kernel: %x\n", &end_kernel); // 0x0020_F7E0, 2^21 2MB and some change
 
-	// unsigned int cr0, cs, ds, es, fs, gs, ss;
-	
-	// // Read CR0
-	// asm volatile ("mov %%cr0, %0" : "=r"(cr0));
-
-	// // Read segment registers
-	// asm volatile ("mov %%cs, %0" : "=r"(cs));
-	// asm volatile ("mov %%ds, %0" : "=r"(ds));
-	// asm volatile ("mov %%es, %0" : "=r"(es));
-	// asm volatile ("mov %%fs, %0" : "=r"(fs));
-	// asm volatile ("mov %%gs, %0" : "=r"(gs));
-	// asm volatile ("mov %%ss, %0" : "=r"(ss));
-
-	// // Print values
-	// kprintf("CR0: %x\n", cr0);
-	// kprintf("CS:  %x\n", cs);
-	// kprintf("DS:  %x\n", ds);
-	// kprintf("ES:  %x\n", es);
-	// kprintf("FS:  %x\n", fs);
-	// kprintf("GS:  %x\n", gs);
-	// kprintf("SS:  %x\n", ss);
-
-
-
-
-	// while (1) {
-	// 	if (counter == 10) {
-	// 		kprintf("Counter: %d\n", counter);
-	// 		break;
-	// 	}
-	// }
-
-	// Read CR0
-	// asm volatile ("mov %%cr0, %0" : "=r"(cr0));
-
-	// // Read segment registers
-	// asm volatile ("mov %%cs, %0" : "=r"(cs));
-	// asm volatile ("mov %%ds, %0" : "=r"(ds));
-	// asm volatile ("mov %%es, %0" : "=r"(es));
-	// asm volatile ("mov %%fs, %0" : "=r"(fs));
-	// asm volatile ("mov %%gs, %0" : "=r"(gs));
-	// asm volatile ("mov %%ss, %0" : "=r"(ss));
-
-	// // Print values
-	// kprintf("CR0: %x\n", cr0);
-	// kprintf("CS:  %x\n", cs);
-	// kprintf("DS:  %x\n", ds);
-	// kprintf("ES:  %x\n", es);
-	// kprintf("FS:  %x\n", fs);
-	// kprintf("GS:  %x\n", gs);
-	// kprintf("SS:  %x\n", ss);
-
-	// shutdown();
+	shutdown();
 }

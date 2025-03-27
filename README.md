@@ -1,6 +1,6 @@
 # YoRHa
 
-I want YoRHa to someday look the the GUI for NieR: Automata, I love that game. I have a long way to go. Here is a copilot README:
+I want YoRHa to someday look like the GUI for NieR: Automata, I love that game. I have a long way to go. Here is a copilot README:
 
 YoRHa is a simple operating system kernel written in C and assembly. It is designed as an educational project to explore low-level system programming concepts, including memory management, interrupt handling, and file systems.
 

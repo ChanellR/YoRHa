@@ -20,6 +20,10 @@
 #define FILE_TYPE_NORMAL 1
 #define FILE_TYPE_SPECIAL 2
 
+#define SEEK_SET 0
+#define SEEK_CUR 1
+#define SEEK_END 2
+
 // error messages
 extern char error_msg[128];
 
@@ -192,7 +196,7 @@ int32_t unlink(const char* path);
  * @param pos The position to move the cursor to.
  * @return The new cursor position, or -1 on failure.
  */
-int64_t seek(int64_t fd, uint64_t pos);
+int32_t seek(int64_t fd, int32_t offset, uint32_t param);
 
 /**
  * @brief Creates a new directory.

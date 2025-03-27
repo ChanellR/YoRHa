@@ -33,7 +33,7 @@ void syscall_handler(void* arguments, Registers *r) {
 	kprintf("call id: 0x%x\n", r->err_code);
 }
 
-// cmd: ls [dir]
+// cmd: ls 'dirname'
 int32_t exec_ls(int32_t stdin, int32_t stdout, StringList cmd) {
 	UNUSED(stdin);
 	char* ptr = str_list_dir(cmd.contents[1].contents);
@@ -45,7 +45,7 @@ int32_t exec_ls(int32_t stdin, int32_t stdout, StringList cmd) {
 	return 0;
 }
 
-// cmd: cat [filename]
+// cmd: cat 'filename'
 int32_t exec_cat(int32_t stdin, int32_t stdout, StringList cmd) {
 	UNUSED(stdin);
 	char c;
@@ -95,10 +95,11 @@ int32_t exec_mkdir(int32_t stdin, int32_t stdout, StringList cmd) {
 }  \
 
 int32_t shell() {
+
 	String curr_command = {.capacity = 0, .contents = 0, .len = 0};
 	String working_dir = {0};
 	APPEND(working_dir, '/');
-
+	
 	char c;
 	write(STDOUT, "$ ", 2);
 	while (1) {
@@ -108,7 +109,7 @@ int32_t shell() {
 			if (c == '\b') {
 				if (curr_command.len > 0) {
 					curr_command.len--;
-					write(STDOUT, '\b', 1);
+					write(STDOUT, "\b", 1);
 				}
 				continue;
 			}
@@ -126,8 +127,8 @@ int32_t shell() {
 				write(STDOUT, "\n$ ", 3);
 				continue;
 			}
-			
 			APPEND(curr_command, '\0');
+			
 			StringList cmd = string_split(curr_command.contents, ' ');
 
 			// look for `>`, then we change fd's

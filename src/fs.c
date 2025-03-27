@@ -486,15 +486,29 @@ uint64_t write(int64_t fd, const void* buf, uint32_t count) {
 	return bytes_written;
 }
 
-int64_t seek(int64_t fd, uint64_t pos) {
+int32_t seek(int64_t fd, int32_t offset, uint32_t param) {
 	// TODO: assert that this fd is allocated
-	if (true) {
-		global_fd_table.entries[fd].read_pos = pos;
-		global_fd_table.entries[fd].write_pos = pos;
+	if (global_fd_table.bitmap[0] & (1 << (31 - fd))) {
+		switch (param)
+		{
+		case SEEK_SET:
+			global_fd_table.entries[fd].read_pos = offset;
+			global_fd_table.entries[fd].write_pos = offset;
+			break;
+		case SEEK_CUR:
+			global_fd_table.entries[fd].read_pos += offset;
+			global_fd_table.entries[fd].write_pos += offset;
+			break;
+		case SEEK_END:
+			global_fd_table.entries[fd].read_pos = global_inode_table[global_fd_table.entries[fd].inode_num].size - offset;
+			global_fd_table.entries[fd].write_pos = global_inode_table[global_fd_table.entries[fd].inode_num].size - offset;
+			break;
+		}
 	} else {
+		PUSH_ERROR("file descriptor is not allocated"); // TODO: put this everywhere
 		return -1;
 	}
-	return pos;
+	return global_fd_table.entries[fd].read_pos; // TODO: figure out what this should really be doing
 }
 
 int32_t mkdir(const char* path) {

@@ -61,6 +61,17 @@ void* krealloc(void *ptr, size_t new_size) {
 	return NULL;
 }
 
+inline void free_string_list(StringList sl) {
+	for (size_t i = 0; i < sl.len; i++) {
+		kfree(sl.contents->contents); // NOTE: only those that are allocated
+	}
+	kfree(sl.contents);
+}
+
+inline void free_string(String s) {
+	kfree(s.contents);
+}
+
 String concat(String dst, const char* src) {
 	size_t i = 0;
 	while (src[i]) {
@@ -69,3 +80,27 @@ String concat(String dst, const char* src) {
 	}
 	return dst;
 }
+
+StringList string_split(const char* s, char delim) {
+	StringList sl = {.len = 0, .capacity = 0};
+	String curr = {0};
+	size_t i = 0;
+	while (s[i]) {
+		if (s[i] == delim) {
+			APPEND(curr, '\0');
+			APPEND(sl, curr);
+			curr.capacity = 0; // NOTE: allocate a completely new pointer
+		} else {
+			APPEND(curr, s[i]);
+		}
+		i++;
+	}	
+	if (curr.len > 0) {
+		// don't free it in the last place, because we free them
+		// all at the end
+		APPEND(curr, '\0');
+		APPEND(sl, curr); 
+	}
+	return sl;
+}
+

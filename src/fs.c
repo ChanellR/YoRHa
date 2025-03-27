@@ -96,14 +96,19 @@ int32_t seek_directory(const char* dir_path) {
 	FileSystemDirDataBlock* dir_ptr = (FileSystemDirDataBlock*)current_dir_buf;
 	
 	if (dir_path[0] != '/') {
-		PANIC("relative indexing not implemented");
+		PUSH_ERROR("relative indexing not implemented");
+		return -1;
 	}
  
-	// TODO: conserving the syntax of referencing the directory like `/dir_name` without the last `/`
-	// NOTE: ignoring root, maybe rethink abstraction
 	uint16_t char_index = 0;
 	while (dir_path[current_char]) {
-		if (dir_path[current_char] == '/') { // done with writing next directory name
+		if (dir_path[current_char] == '/' || dir_path[current_char + 1] == '\0') { // done with writing next directory name
+			// TODO: conserving the syntax of referencing the directory like `/dir_name` without the last `/`
+			// NOTE: ignoring root, maybe rethink abstraction
+			if (dir_path[current_char] != '/' && dir_path[current_char + 1] == '\0') {
+				next_dir[char_index++] = dir_path[current_char];
+			}
+
 			next_dir[char_index] = '\0'; // end directory name
 			// gather previous dir data
 			FileSystemInode dir_inode = global_inode_table[current_inode_num];
@@ -132,7 +137,11 @@ int32_t seek_directory(const char* dir_path) {
 		current_char++;
 	}
 
-	ASSERT(global_inode_table[current_inode_num].file_type == 0, "must be a directory"); 
+	if (global_inode_table[current_inode_num].file_type != 0) {
+		PUSH_ERROR("file is not a directory");
+		return -1;
+	}
+
 	return current_inode_num;
 }
 
@@ -214,14 +223,16 @@ DirInodePair allocate_inode(ParsedPath parsed_path, uint8_t file_type, bool allo
 	// NOTE: for these functions that return signed, check
 	int32_t dir_inode_num = seek_directory(parsed_path.dir_path);
 	if (dir_inode_num == -1) {
-		panic(error_msg);
+		pair.valid = false;
+		return pair;
+		// panic(error_msg);
 	}
 	pair.dir_inode_num = dir_inode_num; 
 
 	// TODO: ensure that file doesn't already exist
 	// FileSystemInode dir_inode = global_inode_table[dir_inode_num];
 	if (search_dir(dir_inode_num, parsed_path.filename) != -1) {
-		PANIC("can't create file under same name");
+		PUSH_ERROR("can't create file under same name");
 		pair.valid = false;
 		return pair; // can't create file under same name
 	}
@@ -322,12 +333,17 @@ int32_t allocate_file_descriptor(uint32_t file_inode_num, char* filename) {
 
 int64_t create_filetype(const char* path, uint8_t file_type, bool allocate_fd) {
 
+	if (path[0] != '/') {
+		PUSH_ERROR("Relative addressing unimplmented");
+		return -1;
+	}
+	
 	ParsedPath parsed_path = Path(path);
 	DirInodePair inode_pair = allocate_inode(parsed_path, file_type, (file_type == 2) ? false : true);
 	if (!inode_pair.valid) {
 		kfree(parsed_path.dir_path);
 		kfree(parsed_path.filename);
-		PANIC("Couldn't allocate inode");
+		PUSH_ERROR("Couldn't allocate inode");
 		return -1;
 	}
 
@@ -413,7 +429,7 @@ uint64_t read(int64_t fd, const void* buf, uint32_t count) {
 
 	// special file
 	if (fd_inode.file_type == 0x2) {
-		for (size_t file = 0; file < SPECIAL_FILE_COUNT; file++) {
+		for (size_t file = 0; file < sizeof(system_files) / sizeof(SpecialFile); file++) {
 			if (strcmp(system_files[file].filename, fd_inode.name) == 0) {
 				file_handler handler = system_files[file].handler;
 				return handler(true, fd, buf, count);
@@ -446,7 +462,7 @@ uint64_t write(int64_t fd, const void* buf, uint32_t count) {
 
 	// special file
 	if (fd_inode->file_type == 0x2) {
-		for (size_t file = 0; file < SPECIAL_FILE_COUNT; file++) {
+		for (size_t file = 0; file < sizeof(system_files) / sizeof(SpecialFile); file++) {
 			if (strcmp(system_files[file].filename, fd_inode->name) == 0) {
 				file_handler handler = system_files[file].handler;
 				return handler(false, fd, buf, count);
@@ -482,12 +498,12 @@ int64_t seek(int64_t fd, uint64_t pos) {
 }
 
 int32_t mkdir(const char* path) {
-	int32_t fd = create_filetype(path, FILE_TYPE_DIR, false);
-	if (fd == -1) {
-		panic(error_msg);
-	}
+	// int32_t fd = create_filetype(path, FILE_TYPE_DIR, false);
+	// if (fd == -1) {
+	// 	panic(error_msg);
+	// }
 	// close(fd);
-	return 0;
+	return create_filetype(path, FILE_TYPE_DIR, false);
 }
 
 // outputs directories to the buffer
@@ -515,11 +531,14 @@ void list_dir(const char* path, char* buf) {
 // outputs directories to the buffer
 char* str_list_dir(const char* path) {
 	
-	char dir_path[strlen(path) + 1];
-	char filename[32];
-	parse_path(path, dir_path, filename);
+	// char dir_path[strlen(path) + 1];
+	// char filename[32];
+	// parse_path(path, dir_path, filename);
 
-	uint32_t dir_inode_num = seek_directory(dir_path);
+	int32_t dir_inode_num = seek_directory(path);
+	if (dir_inode_num == -1) {
+		return NULL;
+	}
 	// kprintf("Dir inode: %x\n", dir_inode_num);
 	uint8_t current_dir_buf[BLOCK_BYTES];
 	FileSystemDirDataBlock* dir_ptr = (FileSystemDirDataBlock*)current_dir_buf;
@@ -527,13 +546,16 @@ char* str_list_dir(const char* path) {
 	FileSystemInode dir_inode = global_inode_table[dir_inode_num];
 	ata_read_blocks(dir_inode.data_block_start, current_dir_buf, 1); // only 1 for now
 	uint32_t files_contained = dir_inode.size / sizeof(FileSystemDirEntry); 
-	char* base = kmalloc(files_contained * 32); // NOTE: arbitrary
+	char* base = kmalloc(files_contained * 32 + 1); // NOTE: arbitrary
 	char* buf = base;
 	for (uint32_t file = 0; file < files_contained; file++) {
+		if (file) {
+			*(buf++) = '\n';
+		}
 		buf += strcat(path, buf);
 		buf += strcat(dir_ptr->contents[file].name, buf);
-		*(buf++) = '\n';
 	}
+	*(buf++) = '\0';
 	return base;
 }
 

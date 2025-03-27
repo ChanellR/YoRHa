@@ -79,7 +79,13 @@ void kputc(char c) {
         terminal_column = 0;
         terminal_row++;
         return;
-    }
+    } else if (c == '\b') {
+		// not insert
+        terminal_column--;
+		terminal_putentryat(' ', terminal_color, terminal_column, terminal_row);
+		move_cursor(terminal_column, terminal_row);
+		return;
+	}
     
 	terminal_putentryat(c, terminal_color, terminal_column, terminal_row);
 	if (++terminal_column == VGA_WIDTH) {
@@ -87,7 +93,6 @@ void kputc(char c) {
 		if (++terminal_row == VGA_HEIGHT)
 			terminal_row = 0;
 	}
-	
 	move_cursor(terminal_column, terminal_row);
 }
 

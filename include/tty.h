@@ -8,7 +8,6 @@
 
 #define TERMINAL_BUFFER_SIZE 1024
 #define RING_BUFFER_CAPACITY 64
-#define SPECIAL_FILE_COUNT 1
 
 #define TERMINAL_WIDTH 35 // in characters
 #define TERMINAL_HEIGHT 20

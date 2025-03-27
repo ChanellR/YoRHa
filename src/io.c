@@ -6,10 +6,20 @@ static inline uint8_t get_scancode() {
 }
 
 const char scancode_to_ascii[128] = {
-    0,  27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b', // 0x0E: Backspace
+    0,  0, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b', // 0x0E: Backspace
     '\t', 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n', // 0x1C: Enter
     0, 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`', 0, '\\', // 0x2B: Backslash
     'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0, '*', 0, ' ', 0, // 0x39: Space
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 0x3A-0x45: Function keys (F1-F10)
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 0x46-0x55: Extended keys
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0  // 0x56-0x7F: Remaining keys
+};
+
+const char scancode_to_ascii_shifted[128] = {
+    0,  0, '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+', '\b', // 0x0E: Backspace
+    '\t', 'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '\n', // 0x1C: Enter
+    0, 'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', '"', '~', 0, '|', // 0x2B: Backslash
+    'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?', 0, '*', 0, ' ', 0, // 0x39: Space
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 0x3A-0x45: Function keys (F1-F10)
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 0x46-0x55: Extended keys
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0  // 0x56-0x7F: Remaining keys
@@ -81,10 +91,10 @@ void keyboard_handler(Registers *r) {
 			return;
 		}
 
-		char output_char = scancode_to_ascii[scancode];
-		if (shift_pressed && output_char >= 'a' && output_char <= 'z') {
-			output_char -= 32; // Convert to uppercase
-		}
+		char output_char = (shift_pressed) ? scancode_to_ascii_shifted[scancode] : scancode_to_ascii[scancode];
+		// if (shift_pressed && output_char >= 'a' && output_char <= 'z') {
+		// 	output_char -= 32; // Convert to uppercase
+		// }
 
         // NOTE: blocking until read from write to the input buffer        
         if (output_char) {

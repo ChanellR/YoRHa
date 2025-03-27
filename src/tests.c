@@ -197,6 +197,16 @@ bool test_malloc() {
 	return passing;
 }
 
+bool test_string_split() {
+    bool passing = true;
+    StringList sl = {0};
+	sl = string_split("Hello World", ' ');
+    passing &= strcmp(sl.contents[0].contents, "Hello") == 0;
+    passing &= strcmp(sl.contents[1].contents, "World") == 0;
+    FREE(sl);
+    return passing;
+}
+
 void run_tests(void) {
     kprintf("Running Tests...\n");
     
@@ -220,6 +230,9 @@ void run_tests(void) {
 
     // kprintf("test_malloc...");
     // kprintf((test_malloc()) ? "OK\n" : "FAIL\n");
+
+    kprintf("test_string_split...");
+    kprintf((test_string_split()) ? "OK\n" : "FAIL\n");
     
     kprintf("\n");
 }

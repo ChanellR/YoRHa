@@ -8,16 +8,34 @@
 
 // we will allocate 1KB to begin with
 // we will allocate on the granularity of bytes
+
+#define PAGE_SIZE 0x1000 // 4KiB
+#define HEAP_SIZE 0x1000 // 1 KiB
+#define MAX_ALLOCATIONS 256
+#define BITMAP_CAPACITY HEAP_SIZE/sizeof(uint32_t) // how many bytes are we allocating
+
+#define MATCH(str, cstr) strcmp(str.contents, cstr) == 0
+#define PREFIX(cmd, prefix) strcmp(cmd.contents[0].contents, prefix) == 0
+#define APPEND(s, c) do { \
+	if (s.capacity == 0) { \
+		s.contents = kcalloc(2, sizeof(*(s.contents))); \
+		s.capacity = 2; \
+		s.len = 1; \
+		s.contents[0] = c;  \
+	} else if (s.len == s.capacity) { \
+		s.contents = krealloc(s.contents, sizeof(*(s.contents)) * s.capacity * 2); \
+		s.capacity *= 2; \
+		s.contents[s.len++] = c;							\
+	} else { \
+		s.contents[s.len++] = c; \
+	}			\
+} while (0) \
+
 typedef struct {
 	void* base_ptr;
 	BitRange range;
 	bool utilized;
 } AllocEntry;
-
-#define PAGE_SIZE 0x1000 // 4KiB
-#define HEAP_SIZE 0x400 // 1 KiB
-#define MAX_ALLOCATIONS 256
-#define BITMAP_CAPACITY HEAP_SIZE/sizeof(uint32_t) // how many bytes are we allocating
 typedef struct {
 	void* bottom;
 	AllocEntry entries[MAX_ALLOCATIONS];
@@ -31,29 +49,31 @@ typedef struct {
 	char* contents;
 } String;
 
-#define APPEND(s, c) do { \
-	if (s.capacity == 0) { \
-		s.contents = kcalloc(1, 2); \
-		s.capacity = 2; \
-		s.len = 1; \
-		s.contents[0] = c;  \
-	} else if (s.len == s.capacity) { \
-		s.contents = krealloc(s.contents, s.capacity * 2); \
-		s.capacity *= 2; \
-		s.contents[s.len++] = c;							\
-	} else { \
-		s.contents[s.len++] = c; \
-	}			\
-} while (0) \
+typedef struct {
+	size_t len;
+	size_t capacity;
+	String* contents;
+} StringList;
 
+#define FREE(obj) _Generic((obj), \
+    StringList: free_string_list, \
+    String: free_string, \
+	char*: kfree \
+)(obj) 
 
 extern uint32_t end_kernel;
 
 void initialize_allocator();
+
 void* kmalloc(size_t size);
-void kfree(void* ptr);
 void* kcalloc(size_t num, size_t size);
 void* krealloc(void *ptr, size_t new_size);
+void kfree(void* ptr);
+
 String concat(String dst, const char* src);
+StringList string_split(const char* s, char delim);
+
+void free_string_list(StringList sl);
+void free_string(String s);
 
 #endif // ALLOC_H

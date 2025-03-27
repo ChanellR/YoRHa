@@ -15,7 +15,7 @@ void* kmalloc(size_t size) {
 		PANIC("Insufficient space in heap");
 	}
 	// NOTE: this may not be going to the right memory address
-	new_entry.base_ptr = global_alloc_state.bottom + (allocation.start / 4); // start is number of bytes
+	new_entry.base_ptr = global_alloc_state.bottom + allocation.start; // start is number of bytes
 	new_entry.range = allocation;
 	new_entry.utilized = true;
 	for (size_t entry = 0; entry < MAX_ALLOCATIONS; entry++) {

@@ -67,6 +67,7 @@ int str_count(const char* s, char target) {
 	return count;
 }
 
+// only counts how many characters, UNTIL the null
 size_t strlen(const char* str) 
 {
 	size_t len = 0;

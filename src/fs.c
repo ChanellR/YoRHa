@@ -9,19 +9,12 @@
 
 char error_msg[128] = {0};
 
-// number of blocks per
-#define SUPER_SIZE 1 
-#define INODE_BITMAP_SIZE 1
-#define DATA_BITMAP_SIZE 1
-#define INODE_TABLE_SIZE 5
-#define DATA_REGION_START SUPER_SIZE + INODE_BITMAP_SIZE + DATA_BITMAP_SIZE + INODE_TABLE_SIZE
-#define DATA_REGION_SIZE 64 - SUPER_SIZE - INODE_BITMAP_SIZE - DATA_BITMAP_SIZE - INODE_TABLE_SIZE
-
 // will be updated through the runtime, and periodically synced on disk, perhaps on closing
 static FileSystemSuper global_super;
 static uint32_t global_ibmap[BLOCK_BYTES/4] = {0}; // inode occupation bitmap
 static uint32_t global_dbmap[BLOCK_BYTES/4] = {0}; // data block occuption bitmap
 static FileSystemInode global_inode_table[(BLOCK_BYTES * INODE_TABLE_SIZE) / sizeof(FileSystemInode)];
+static FileDescriptorTable global_fd_table = {0}; // clear bitmap
 
 // we will format the disk on new disk
 // on startup we will read and store the metadata from it, mount the disk
@@ -84,10 +77,12 @@ bool initalize_file_system(bool force_format) {
 	// dir_tbl_ptr->files_contained = 0;
 	ata_write_blocks(global_super.data_start, NULL, 1);
 
+	create_system_files();
+
 	return true;
 }
 
-static FileDescriptorTable global_fd_table = {0}; // clear bitmap
+void create_system_files() {}
 
 // returns the inode_num corresponding to the directory
 int32_t seek_directory(const char* dir_path) {
@@ -189,88 +184,198 @@ int32_t search_dir(uint32_t dir_inode_num, char* filename) {
 	return -1;
 }
 
-// -- FILE SYSTEM SYSCALLS --
-int64_t create_filetype(const char* path, bool is_dir) {
+typedef struct {
+	bool valid;
+	uint32_t file_inode_num;
+	uint32_t dir_inode_num;
+}DirInodePair;
 
-	// follow path to target directory
-	char dir_path[strlen(path)];
-	char filename[32];
-	parse_path(path, dir_path, filename);
-	// kprintf("dir: %s, filename: %s, path: %s\n", dir_path, filename, path);
+typedef struct {
+	char* dir_path;
+	char* filename;
+}ParsedPath;
+
+
+// Remember to free con
+ParsedPath Path(const char* path) {
+	ParsedPath parsed_path;
+	size_t path_length = strlen(path) + 1; // ONLY TO THE NULL
+	parsed_path.dir_path = kmalloc(path_length);
+	parsed_path.filename = kmalloc(path_length);
+	// parse_path(path, parsed_path.dir_path, parsed_path.filename);
+
+	strcpy(parsed_path.dir_path, path);
+	size_t i = 0;
+	uint32_t last_slash = 0;
+	while (path[i]) {
+		if (path[i] == '/') {
+			last_slash = i;
+		}
+		i++;
+	}
+
+	strcpy(parsed_path.filename, parsed_path.dir_path + last_slash + 1); // copy tail
+	parsed_path.dir_path[last_slash + 1] = '\0'; // end at slash
+
+	return parsed_path;
+}
+
+// allocate inode for a non-existent file
+DirInodePair allocate_inode(ParsedPath parsed_path, uint8_t file_type, bool alloc_data) {
+
+	DirInodePair pair;
 
 	// NOTE: for these functions that return signed, check
-	int32_t dir_inode_num = seek_directory(dir_path);
+	int32_t dir_inode_num = seek_directory(parsed_path.dir_path);
 	if (dir_inode_num == -1) {
 		panic(error_msg);
 	}
-	// kprintf("dir_inode_num: %d\n", dir_inode_num);
-	FileSystemInode dir_inode = global_inode_table[dir_inode_num];
-	// kprintf("dir_inode = {.data_block_start = %u }\n", dir_inode.data_block_start);
+	pair.dir_inode_num = dir_inode_num; 
 
 	// TODO: ensure that file doesn't already exist
-	if (search_dir(dir_inode_num, filename) != -1) {
+	// FileSystemInode dir_inode = global_inode_table[dir_inode_num];
+	if (search_dir(dir_inode_num, parsed_path.filename) != -1) {
 		PANIC("can't create file under same name");
-		return -1; // can't create file under same name
+		pair.valid = false;
+		return pair; // can't create file under same name
 	}
 
-	// bool is_dir = path[strlen(path) - 1] == '/';
-	FileSystemInode file_inode = {.file_type = (is_dir) ? 0 : 1, .parent_inode_num = dir_inode_num, .size = 0};
-	strcpy(file_inode.name, filename);
+	// NOTE: we assign a file_inode to a directory as soon as its made
+	FileSystemInode file_inode = {.file_type = file_type, .parent_inode_num = dir_inode_num, .size = 0};
+	strcpy(file_inode.name, parsed_path.filename);
 
 	// allocate inode for file
-	// kprintf("before inode_bitmap: %b\n", global_ibmap[0]);
-	BitRange range = alloc_bitrange(global_ibmap, BLOCK_BYTES * 8, 1, false);
-	// kprintf("after inode_bitmap: %b\n", global_ibmap[0]);
-	if (range.length == 0) { // can't allocate inode
+	BitRange ib_range = alloc_bitrange(global_ibmap, BLOCK_BYTES * 8, 1, false);
+	if (ib_range.length == 0) { // can't allocate inode
 		// shouldn't need to dealloc
-		PANIC("can't allocate inode");
-		return -1;
+		PANIC("allocate_inode: can't allocate inode");
+		pair.valid = false;
+		return pair;
 	}
-	uint32_t file_inode_num = range.start;
-	// kprintf("inode_num: %u\n", file_inode_num);
+	pair.file_inode_num = ib_range.start;
 
-	// allocate data blocks for file
-	range = alloc_bitrange(global_dbmap, BLOCK_BYTES * 8, 1, false);
-	if (range.length == 0) {
-		PANIC("can't allocate data blocks");
-		return -1;
+	if (alloc_data) {
+		// allocate data blocks for file
+		BitRange db_range = alloc_bitrange(global_dbmap, BLOCK_BYTES * 8, 1, false);
+		if (db_range.length == 0) {
+			PANIC("can't allocate data blocks");
+			dealloc_bitrange(global_ibmap, ib_range);
+			pair.valid = false;
+			return pair;
+		}
+		file_inode.data_block_start = db_range.start;
+	} else {
+		file_inode.data_block_start = 0; // place-holder
 	}
-	file_inode.data_block_start = range.start;
 
 	// finally add into inodes
-	global_inode_table[file_inode_num] = file_inode;
+	global_inode_table[pair.file_inode_num] = file_inode;
 	global_super.used_inodes++;
 
-	// add file to directory
-	uint8_t current_dir_buf[BLOCK_BYTES];
+	pair.valid = true;
+	return pair;
+}
+
+// changes both of their state such that the file is within the other directory
+int32_t link_file_in_dir(uint32_t dir_inode_num, uint32_t file_inode_num) {
+
+	uint8_t current_dir_buf[BLOCK_BYTES] = {0};
 	FileSystemDirDataBlock* dir_ptr = (FileSystemDirDataBlock*)current_dir_buf;
+
+	FileSystemInode* dir_inode = &global_inode_table[dir_inode_num];
+	FileSystemInode* file_inode = &global_inode_table[file_inode_num];
 
 	// NOTE: we copy dir_inode here from the global table, instead of as reference, 
 	// there may be some bugs where we don't write anything, but we've only been reading
 	// so far until increasing size so this may be ok
-	ata_read_blocks(dir_inode.data_block_start, current_dir_buf, 1); // NOTE: only 1 for now
-	FileSystemDirEntry* new_entry = &(dir_ptr->contents[dir_inode.size / sizeof(FileSystemDirEntry)]);
+	ata_read_blocks(dir_inode->data_block_start, current_dir_buf, 1); // NOTE: only 1 for now
+	
+	FileSystemDirEntry* new_entry = &(dir_ptr->contents[dir_inode->size / sizeof(FileSystemDirEntry)]);
 	new_entry->inode_num = file_inode_num;
-	strcpy(new_entry->name, filename);
-	dir_inode.size += sizeof(FileSystemDirEntry);
-	// kprintf("dir_inode = { .name: %s, .data_block_start: %u }\n", dir_inode.name, dir_inode.data_block_start);
-	ata_write_blocks(dir_inode.data_block_start, current_dir_buf, 1); // NOTE: this can break things, if data_block_start is incorrect
-	global_inode_table[dir_inode_num] = dir_inode;
+	strcpy(new_entry->name, file_inode->name);
 
-	// now we should allocate a file descriptor
-	range = alloc_bitrange(global_fd_table.bitmap, BLOCK_BYTES * 8, 1, false);
-	uint32_t fd_index = range.start;
+	dir_inode->size += sizeof(FileSystemDirEntry);
+	ata_write_blocks(dir_inode->data_block_start, current_dir_buf, 1); // NOTE: this can break things, if data_block_start is incorrect
+
+	return 0;
+}
+
+void unlink_file_in_dir(uint32_t dir_inode_num, uint32_t file_inode_num) {
+	uint8_t current_dir_buf[BLOCK_BYTES] = {0};
+	FileSystemInode* dir_inode = &global_inode_table[dir_inode_num];
+	ata_read_blocks(dir_inode->data_block_start, current_dir_buf, 1); // NOTE: only 1 for now
+	FileSystemDirDataBlock* data_block = (FileSystemDirDataBlock*)current_dir_buf;
+
+	// NOTE: should do nothing if the file doesn't exist in the dir
+	// shift all the entries back by 1
+	for (uint32_t entry = 0; entry < dir_inode->size / sizeof(FileSystemDirEntry); entry++) {
+		if(data_block->contents[entry].inode_num == (uint32_t)file_inode_num) {
+			while (entry < dir_inode->size / sizeof(FileSystemDirEntry)) {
+				data_block->contents[entry] = data_block->contents[entry+1];
+				entry++;
+			}
+			dir_inode->size -= sizeof(FileSystemDirEntry); // reduce the size
+			break;
+		}
+	}
+	ata_write_blocks(dir_inode->data_block_start, current_dir_buf, 1); // NOTE: this can break things, if data_block_start is incorrect
+}
+
+int32_t allocate_file_descriptor(uint32_t file_inode_num, char* filename) {
+	BitRange fd_range = alloc_bitrange(global_fd_table.bitmap, BLOCK_BYTES * 8, 1, false);
+	if (fd_range.length == 0) {
+		return -1;
+	}
+	uint32_t fd_index = fd_range.start;
 	FileDescriptorEntry file_descriptor = {.write_pos = 0, .read_pos = 0, .inode_num = file_inode_num, .index = fd_index};
 	strcpy(file_descriptor.name, filename);
 	global_fd_table.entries[fd_index] = file_descriptor;
+	// NOTE: we don't keep track of the number of used file descriptors
+	return fd_index;
+}
 
+
+int64_t create_filetype(const char* path, uint8_t file_type, bool allocate_fd) {
+
+	ParsedPath parsed_path = Path(path);
+	DirInodePair inode_pair = allocate_inode(parsed_path, file_type, (file_type == 2) ? false : true);
+	if (!inode_pair.valid) {
+		kfree(parsed_path.dir_path);
+		kfree(parsed_path.filename);
+		PANIC("Couldn't allocate inode");
+		return -1;
+	}
+
+	link_file_in_dir(inode_pair.dir_inode_num, inode_pair.file_inode_num);
+	int32_t fd_index = 0;
+	if (allocate_fd) {
+		fd_index = allocate_file_descriptor(inode_pair.file_inode_num, parsed_path.filename);
+	}
+	
+	kfree(parsed_path.dir_path);
+	kfree(parsed_path.filename);
+
+	// cleanup
+	if (fd_index == -1) {
+		unlink_file_in_dir(inode_pair.dir_inode_num, inode_pair.file_inode_num);
+		BitRange data_range = {.start = global_inode_table[inode_pair.file_inode_num].data_block_start, .length = 1};
+		// if {0, 0} range, should do nothing
+		dealloc_bitrange(global_dbmap, data_range);
+		BitRange inode_range = {.start = inode_pair.valid, .length = 1};
+		dealloc_bitrange(global_ibmap, inode_range);
+	}
+	
 	return fd_index; // file descriptor index
 }
+
+// -- FILE SYSTEM SYSCALLS --
+
+// NOTE: should these be signed
 
 // will automatically open the file
 // returns a file descriptor
 int64_t create(const char* path) {
-	return create_filetype(path, false);
+	return create_filetype(path, FILE_TYPE_NORMAL, true);
 }
 
 int64_t open(const char* path) {
@@ -278,32 +383,40 @@ int64_t open(const char* path) {
 	// can't open directories
 
 	// follow path to target directory
-	char dir_path[strlen(path)];
-	char filename[32];
-	parse_path(path, dir_path, filename);
+	ParsedPath parsed_path = Path(path);
 
-	uint32_t dir_inode_num = seek_directory(dir_path);
+	// char dir_path[strlen(path)];
+	// char filename[32];
+	// parse_path(path, dir_path, filename);
+
+	uint32_t dir_inode_num = seek_directory(parsed_path.dir_path);
 
 	// read directory for files
-	int32_t file_inode_num = search_dir(dir_inode_num, filename);
+	int32_t file_inode_num = search_dir(dir_inode_num, parsed_path.filename);
 	if (file_inode_num == -1) {
 		PUSH_ERROR("file doesn't exist");
+		kfree(parsed_path.dir_path);
+		kfree(parsed_path.filename);
 		return -1; // file doesn't exist
 	} 
 
 	// kprintf("[open] file_inode_num: %u\n", file_inode_num);
 	// kprintf("Start: %u\n", global_inode_table[file_inode_num].data_block_start);
 	// create file descriptor
-	BitRange range = alloc_bitrange(global_fd_table.bitmap, BLOCK_BYTES * 8, 1, false);
-	uint32_t fd_index = range.start;
-	FileDescriptorEntry file_descriptor = {.write_pos = 0, .read_pos = 0, .inode_num = file_inode_num, .index = fd_index};
-	strcpy(file_descriptor.name, filename);
-	global_fd_table.entries[fd_index] = file_descriptor;
+	int32_t fd_index = allocate_file_descriptor(file_inode_num, parsed_path.filename);
+	
+	kfree(parsed_path.dir_path);
+	kfree(parsed_path.filename);
+
+	// BitRange range = alloc_bitrange(global_fd_table.bitmap, BLOCK_BYTES * 8, 1, false);
+	// uint32_t fd_index = range.start;
+	// FileDescriptorEntry file_descriptor = {.write_pos = 0, .read_pos = 0, .inode_num = file_inode_num, .index = fd_index};
+	// strcpy(file_descriptor.name, parsed_path.filename);
+	// global_fd_table.entries[fd_index] = file_descriptor;
 
 	return fd_index;
 }
 
-// NOTE: should these be signed
 int64_t close(int64_t fd) {
 	BitRange fd_bitmap_range = {.start = fd, .length = 1};
 	dealloc_bitrange(global_fd_table.bitmap, fd_bitmap_range);
@@ -315,6 +428,12 @@ uint64_t read(int64_t fd, const void* buf, uint32_t count) {
 	FileDescriptorEntry* fd_entry = &global_fd_table.entries[fd]; 
 	uint32_t fd_inode_num = fd_entry->inode_num;
 	FileSystemInode fd_inode = global_inode_table[fd_inode_num];
+
+	// special file
+	if (fd_inode.file_type == 0x2) {
+
+		return 0;
+	}
 
 	// read data_blocks
 	uint8_t data_block_buf[BLOCK_BYTES] = {0};
@@ -338,6 +457,12 @@ uint64_t write(int64_t fd, const void* buf, uint32_t count) {
 	uint32_t fd_inode_num = fd_entry->inode_num;
 	FileSystemInode* fd_inode = &global_inode_table[fd_inode_num];
 
+	// special file
+	if (fd_inode->file_type == 0x2) {
+
+		return 0;
+	}
+
 	// read data_blocks
 	uint8_t data_block_buf[BLOCK_BYTES] = {0};
 	ata_read_blocks(fd_inode->data_block_start, data_block_buf, 1); // NOTE: only 1 block
@@ -353,51 +478,6 @@ uint64_t write(int64_t fd, const void* buf, uint32_t count) {
 	return bytes_written;
 }
 
-int64_t unlink(const char* path) {
-
-	char dir_path[strlen(path)];
-	char filename[32];
-	parse_path(path, dir_path, filename);
-	uint32_t dir_inode_num = seek_directory(dir_path);
-
-	// read directory for files
-	int32_t file_inode_num = search_dir(dir_inode_num, filename);
-	if (file_inode_num == -1) {
-		PUSH_ERROR("file doesn't exist");
-		return -1; // file doesn't exist
-	} 
-
-	// remove from directory data
-	uint8_t current_dir_buf[BLOCK_BYTES] = {0};
-	FileSystemInode* dir_inode = &global_inode_table[dir_inode_num];
-	ata_read_blocks(dir_inode->data_block_start, current_dir_buf, 1); // NOTE: only 1 for now
-	FileSystemDirDataBlock* data_block = (FileSystemDirDataBlock*)current_dir_buf;
-
-	// shift all the entries back by 1
-	for (uint32_t entry = 0; entry < dir_inode->size / sizeof(FileSystemDirEntry); entry++) {
-		if(data_block->contents[entry].inode_num == (uint32_t)file_inode_num) {
-			while (entry < dir_inode->size / sizeof(FileSystemDirEntry)) {
-				data_block->contents[entry] = data_block->contents[entry+1];
-				entry++;
-			}
-			break;
-		}
-	}
-	dir_inode->size -= sizeof(FileSystemDirEntry); // reduce the size
-	ata_write_blocks(dir_inode->data_block_start, current_dir_buf, 1); // NOTE: this can break things, if data_block_start is incorrect
-	
-	// unallocate data blocks 
-	FileSystemInode file_inode = global_inode_table[file_inode_num];
-	BitRange range = {.start = file_inode.data_block_start, .length = 1};
-	dealloc_bitrange(global_dbmap, range);
-
-	// unallocate inode
-	range.start = file_inode_num;
-	dealloc_bitrange(global_ibmap, range); // don't need to clear the entry
-	
-	return 0;
-}
-
 int64_t seek(int64_t fd, uint64_t pos) {
 	// TODO: assert that this fd is allocated
 	if (true) {
@@ -410,11 +490,11 @@ int64_t seek(int64_t fd, uint64_t pos) {
 }
 
 int32_t mkdir(const char* path) {
-	int32_t fd = create_filetype(path, true);
+	int32_t fd = create_filetype(path, FILE_TYPE_DIR, false);
 	if (fd == -1) {
 		panic(error_msg);
 	}
-	close(fd);
+	// close(fd);
 	return 0;
 }
 
@@ -426,7 +506,7 @@ void list_dir(const char* path, char* buf) {
 	parse_path(path, dir_path, filename);
 
 	uint32_t dir_inode_num = seek_directory(dir_path);
-	kprintf("Dir inode: %x\n", dir_inode_num);
+	// kprintf("Dir inode: %x\n", dir_inode_num);
 	uint8_t current_dir_buf[BLOCK_BYTES];
 	FileSystemDirDataBlock* dir_ptr = (FileSystemDirDataBlock*)current_dir_buf;
 	
@@ -440,9 +520,56 @@ void list_dir(const char* path, char* buf) {
 	}
 }
 
+int32_t unlink(const char* path) {
+
+	char dir_path[strlen(path)];
+	char filename[32];
+	parse_path(path, dir_path, filename);
+	uint32_t dir_inode_num = seek_directory(dir_path);
+
+	// read directory for files
+	int32_t file_inode_num = search_dir(dir_inode_num, filename);
+	if (file_inode_num == -1) {
+		PUSH_ERROR("file doesn't exist");
+		return -1; // file doesn't exist
+	} 
+
+	// // remove from directory data
+	// uint8_t current_dir_buf[BLOCK_BYTES] = {0};
+	// FileSystemInode* dir_inode = &global_inode_table[dir_inode_num];
+	// ata_read_blocks(dir_inode->data_block_start, current_dir_buf, 1); // NOTE: only 1 for now
+	// FileSystemDirDataBlock* data_block = (FileSystemDirDataBlock*)current_dir_buf;
+
+	// // shift all the entries back by 1
+	// for (uint32_t entry = 0; entry < dir_inode->size / sizeof(FileSystemDirEntry); entry++) {
+	// 	if(data_block->contents[entry].inode_num == (uint32_t)file_inode_num) {
+	// 		while (entry < dir_inode->size / sizeof(FileSystemDirEntry)) {
+	// 			data_block->contents[entry] = data_block->contents[entry+1];
+	// 			entry++;
+	// 		}
+	// 		break;
+	// 	}
+	// }
+	// dir_inode->size -= sizeof(FileSystemDirEntry); // reduce the size
+	// ata_write_blocks(dir_inode->data_block_start, current_dir_buf, 1); // NOTE: this can break things, if data_block_start is incorrect
+	
+	unlink_file_in_dir(dir_inode_num, file_inode_num);
+
+	// unallocate data blocks 
+	FileSystemInode file_inode = global_inode_table[file_inode_num];
+	BitRange range = {.start = file_inode.data_block_start, .length = 1};
+	dealloc_bitrange(global_dbmap, range);
+
+	// unallocate inode
+	range.start = file_inode_num;
+	dealloc_bitrange(global_ibmap, range); // don't need to clear the entry
+	
+	return 0;
+}
+
 void shutdown() {
-	// kprintf("Shutting Down...\n");
-	// kprintf("Syncing Disk Metadata...\n");
+	kprintf("Shutting Down...\n");
+	kprintf("Syncing Disk Metadata...\n");
 	ata_write_blocks(0, (uint8_t*)&global_super, SUPER_SIZE);
 	ata_write_blocks(global_super.i_bmap_start, (uint8_t*)global_ibmap, INODE_BITMAP_SIZE);
 	ata_write_blocks(global_super.d_bmap_start, (uint8_t*)global_dbmap, DATA_BITMAP_SIZE);

@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <util.h>
+#include <string.h>
 
 // we will allocate 1KB to begin with
 // we will allocate on the granularity of bytes

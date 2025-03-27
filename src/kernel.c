@@ -32,12 +32,14 @@ void syscall_handler(void* arguments, Registers *r) {
 }
 
 
+// NOTE: This is little endian
 void main(void) 
 {
-	// NOTE: This is little endian
-	initialize_terminal();
 	initialize_allocator();
+	initialize_terminal();
 	initalize_file_system(false);
+
+	// kprintf("Hello\n");
 	
 	gdt_install();
 	idt_install();	
@@ -45,13 +47,10 @@ void main(void)
 	irq_install();
 	timer_install();
 	keyboard_install();
+	
 	enable_interrupts();
-
+	
 	run_tests();
-
-	// 2^10 KB, 2^20 MB
-	kprintf("End of kernel: %x\n", &end_kernel); // 0x0020_F7E0, 2^21 2MB and some change
-
 
 	shutdown();
 }

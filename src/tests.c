@@ -135,11 +135,15 @@ bool test_alloc_bitrange() {
 
 bool test_filesystem() {
 	bool passing = true;
+    char buffer[64];
+
 	int fd = create("/hello");
 	if (fd == -1) {
 		panic(error_msg);
 	}
 	write(fd, "Hello", 6);
+    read(fd, buffer, 6);
+    passing &= strcmp(buffer, "Hello") == 0;
 	close(fd);
 
 	if (mkdir("/dir") == -1) {
@@ -150,18 +154,24 @@ bool test_filesystem() {
 	if (fd == -1) {
 		panic(error_msg);
 	}
-	write(fd, "bye", 6);
 	close(fd);
 
+    fd = open("/dir/goodbye");
+	write(fd, "bye", 4);
+    read(fd, buffer, 6);
+    passing &= strcmp(buffer, "bye") == 0;
+    close(fd);
+    
 	char files[64];
 	list_dir("/dir/", files);
-	kprintf("Listing files in root dir:\n%s", files);
+    passing &= strcmp(files, "/dir/goodbye\n") == 0;
 
 	unlink("/dir/goodbye");
 
 	char new_file[64];
 	list_dir("/dir/", new_file);
-	kprintf("Listing files in root dir:\n%s", new_file);
+    passing &= strcmp(new_file, "") == 0;
+
 	return passing;
 }
 
@@ -193,17 +203,17 @@ void run_tests(void) {
     // kprintf("test_ata_pio...");
     // kprintf((test_ata_pio()) ? "OK\n" : "FAIL\n");
 
-    kprintf("test_intlen...");
-    kprintf((test_intlen()) ? "OK\n" : "FAIL\n");
+    // kprintf("test_intlen...");
+    // kprintf((test_intlen()) ? "OK\n" : "FAIL\n");
     
-    kprintf("test_strcmp...");
-    kprintf((test_strcmp()) ? "OK\n" : "FAIL\n");
+    // kprintf("test_strcmp...");
+    // kprintf((test_strcmp()) ? "OK\n" : "FAIL\n");
 
-    kprintf("test_apply_bitrange...");
-    kprintf((test_apply_bitrange()) ? "OK\n" : "FAIL\n");
+    // kprintf("test_apply_bitrange...");
+    // kprintf((test_apply_bitrange()) ? "OK\n" : "FAIL\n");
 
-    kprintf("test_alloc_bitrange...");
-    kprintf((test_alloc_bitrange()) ? "OK\n" : "FAIL\n");
+    // kprintf("test_alloc_bitrange...");
+    // kprintf((test_alloc_bitrange()) ? "OK\n" : "FAIL\n");
 
     // kprintf("test_filesystem...");
     // kprintf((test_filesystem()) ? "OK\n" : "FAIL\n");

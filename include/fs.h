@@ -4,6 +4,20 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <flags.h>
+#include <alloc.h>
+
+
+// number of blocks per
+#define SUPER_SIZE 1 
+#define INODE_BITMAP_SIZE 1
+#define DATA_BITMAP_SIZE 1
+#define INODE_TABLE_SIZE 5
+#define DATA_REGION_START SUPER_SIZE + INODE_BITMAP_SIZE + DATA_BITMAP_SIZE + INODE_TABLE_SIZE
+#define DATA_REGION_SIZE 64 - SUPER_SIZE - INODE_BITMAP_SIZE - DATA_BITMAP_SIZE - INODE_TABLE_SIZE
+
+#define FILE_TYPE_DIR 0
+#define FILE_TYPE_NORMAL 1
+#define FILE_TYPE_SPECIAL 2
 
 // error messages
 extern char error_msg[128];
@@ -12,34 +26,35 @@ extern char error_msg[128];
  * @brief Structure representing the superblock of the file system.
  */
 typedef struct {
-    char format_indicator[16]; ///< Magic identifier for the file system.
-    uint64_t disk_size;        ///< Total size of the disk in bytes.
-    uint32_t sector_count;     ///< Total number of sectors on the disk.
-    uint32_t block_count;      ///< Total number of formatted blocks.
-    uint32_t i_bmap_start;     ///< Start block of the inode bitmap.
-    uint32_t d_bmap_start;     ///< Start block of the data bitmap.
-    uint32_t inode_table_start;///< Start block of the inode table.
-    uint32_t used_inodes;      ///< Number of used inodes.
-    uint32_t data_start;       ///< Start block of the data region.
+    char format_indicator[16];  // Magic identifier for the file system.
+    uint64_t disk_size;         // Total size of the disk in bytes.
+    uint32_t sector_count;      // Total number of sectors on the disk.
+    uint32_t block_count;       // Total number of formatted blocks.
+    uint32_t i_bmap_start;      // Start block of the inode bitmap.
+    uint32_t d_bmap_start;      // Start block of the data bitmap.
+    uint32_t inode_table_start; // Start block of the inode table.
+    uint32_t used_inodes;       // Number of used inodes.
+    uint32_t data_start;        // Start block of the data region.
 } FileSystemSuper;
 
 /**
  * @brief Structure representing an inode in the file system.
  */
 typedef struct {
-    char name[32];             ///< Name of the file or directory.
-    uint8_t file_type;         ///< Type of the file (0 - directory, 1 - file).
-    uint32_t data_block_start; ///< Starting block of the file's data.
-    uint32_t size;             ///< Size of the file in bytes.
-    uint32_t parent_inode_num; ///< Parent inode number.
+    char name[32];              // Name of the file or directory.
+    uint8_t file_type;          // Type of the file (0 - directory, 1 - file, 2 - special).
+    // TODO: replace this with a BitRange, or multiple
+    uint32_t data_block_start;  // Starting block of the file's data.
+    uint32_t size;              // Size of the file in bytes.
+    uint32_t parent_inode_num;  // Parent inode number.
 } FileSystemInode;
 
 /**
  * @brief Structure representing a directory entry.
  */
 typedef struct {
-    char name[32];             ///< Name of the file or directory.
-    uint32_t inode_num;        ///< Inode number of the file or directory.
+    char name[32];              // Name of the file or directory.
+    uint32_t inode_num;         // Inode number of the file or directory.
 } FileSystemDirEntry;
 
 #define DIR_FILE_COUNT_MAX (BLOCK_BYTES) / sizeof(FileSystemDirEntry)
@@ -77,21 +92,6 @@ typedef struct {
  *
  * This structure contains metadata for a file descriptor, including the file's
  * name, inode number, read/write positions, and an index for identification.
- *
- * @var FileDescriptorEntry::name
- * The name of the file (up to 31 characters plus null terminator).
- *
- * @var FileDescriptorEntry::inode_num
- * The inode number associated with the file.
- *
- * @var FileDescriptorEntry::read_pos
- * The current read position within the file.
- *
- * @var FileDescriptorEntry::write_pos
- * The current write position within the file.
- *
- * @var FileDescriptorEntry::index
- * An index used to identify the file descriptor entry.
  */
 typedef struct {
     char name[32];
@@ -105,17 +105,6 @@ typedef struct {
  * @struct FileDescriptorTable
  * @brief Represents a table of file descriptors for a process.
  * 
- * This structure manages the allocation and storage of file descriptors
- * for a process. It includes a bitmap for tracking allocated descriptors
- * and an array of file descriptor entries.
- *
- * @var FileDescriptorTable::bitmap
- * A bitmap used to track the allocation status of file descriptors.
- * Each bit corresponds to a file descriptor.
- *
- * @var FileDescriptorTable::entries
- * An array of file descriptor entries, with a maximum of 32 entries
- * (only 16 are currently supported per process).
  */
 typedef struct {
 	uint32_t bitmap[1]; // for allocation of fd's
@@ -182,7 +171,7 @@ uint64_t write(int64_t fd, const void* buf, uint32_t count);
  * @param path The absolute path of the file or directory to delete.
  * @return -1 on failure, or 0 on success.
  */
-int64_t unlink(const char* path);
+int32_t unlink(const char* path);
 
 /**
  * @brief Moves the file cursor to a specific position.
@@ -223,5 +212,8 @@ void list_dir(const char* path, char* buf);
  * It ensures that all metadata changes are saved to persistent storage before the system shuts down.
  */
 void shutdown();
+
+// will be called on formatting of the disk, or if they are not guaranteed to be there
+void create_system_files();
 
 #endif // FS_H

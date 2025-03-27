@@ -7,6 +7,12 @@ void panic(const char* msg) {
 
 // for alloc
 void apply_bitrange(uint32_t* bitmap, BitRange range, bool set) {
+	
+	// NOTE: TO MAKE SURE
+	if (range.length == 0 && range.start == 0) {
+		return;
+	}
+
 	uint32_t start_word = range.start / (sizeof(uint32_t) * 8); // 32 bits in uint32_t
 	uint8_t start_bit = range.start % 32;
 	uint32_t end_word = (range.start + range.length) / (sizeof(uint32_t) * 8); // 32 bits in uint32_t

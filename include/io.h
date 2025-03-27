@@ -8,6 +8,8 @@
 #include <stdbool.h>
 #include <interrupts.h>
 #include <util.h>
+#include <tty.h>
+#include <fs.h>
 
 void timer_install();
 void keyboard_install();

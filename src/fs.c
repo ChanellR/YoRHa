@@ -3,6 +3,7 @@
 #include <string.h>
 #include <util.h>
 #include <fs.h>
+#include <file_handlers.h>
 
 // Source:
 // https://pages.cs.wisc.edu/~remzi/OSTEP/file-implementation.pdf
@@ -82,8 +83,6 @@ bool initalize_file_system(bool force_format) {
 	return true;
 }
 
-void create_system_files() {}
-
 // returns the inode_num corresponding to the directory
 int32_t seek_directory(const char* dir_path) {
 
@@ -154,7 +153,6 @@ void parse_path(const char* path, char* dir_path, char* filename) {
 	dir_path[last_slash + 1] = '\0'; // end at slash
 }
 
-
 // return -1 if can't find file
 // returns the inode corresponding to the file within a given
 // directory
@@ -183,18 +181,6 @@ int32_t search_dir(uint32_t dir_inode_num, char* filename) {
 	PUSH_ERROR("couldn't trace path");
 	return -1;
 }
-
-typedef struct {
-	bool valid;
-	uint32_t file_inode_num;
-	uint32_t dir_inode_num;
-}DirInodePair;
-
-typedef struct {
-	char* dir_path;
-	char* filename;
-}ParsedPath;
-
 
 // Remember to free con
 ParsedPath Path(const char* path) {
@@ -334,7 +320,6 @@ int32_t allocate_file_descriptor(uint32_t file_inode_num, char* filename) {
 	return fd_index;
 }
 
-
 int64_t create_filetype(const char* path, uint8_t file_type, bool allocate_fd) {
 
 	ParsedPath parsed_path = Path(path);
@@ -369,9 +354,6 @@ int64_t create_filetype(const char* path, uint8_t file_type, bool allocate_fd) {
 }
 
 // -- FILE SYSTEM SYSCALLS --
-
-// NOTE: should these be signed
-
 // will automatically open the file
 // returns a file descriptor
 int64_t create(const char* path) {
@@ -431,7 +413,12 @@ uint64_t read(int64_t fd, const void* buf, uint32_t count) {
 
 	// special file
 	if (fd_inode.file_type == 0x2) {
-
+		for (size_t file = 0; file < SPECIAL_FILE_COUNT; file++) {
+			if (strcmp(system_files[file].filename, fd_inode.name) == 0) {
+				file_handler handler = system_files[file].handler;
+				return handler(true, fd, buf, count);
+			}
+		}
 		return 0;
 	}
 
@@ -459,7 +446,12 @@ uint64_t write(int64_t fd, const void* buf, uint32_t count) {
 
 	// special file
 	if (fd_inode->file_type == 0x2) {
-
+		for (size_t file = 0; file < SPECIAL_FILE_COUNT; file++) {
+			if (strcmp(system_files[file].filename, fd_inode->name) == 0) {
+				file_handler handler = system_files[file].handler;
+				return handler(false, fd, buf, count);
+			}
+		}
 		return 0;
 	}
 
@@ -534,25 +526,6 @@ int32_t unlink(const char* path) {
 		return -1; // file doesn't exist
 	} 
 
-	// // remove from directory data
-	// uint8_t current_dir_buf[BLOCK_BYTES] = {0};
-	// FileSystemInode* dir_inode = &global_inode_table[dir_inode_num];
-	// ata_read_blocks(dir_inode->data_block_start, current_dir_buf, 1); // NOTE: only 1 for now
-	// FileSystemDirDataBlock* data_block = (FileSystemDirDataBlock*)current_dir_buf;
-
-	// // shift all the entries back by 1
-	// for (uint32_t entry = 0; entry < dir_inode->size / sizeof(FileSystemDirEntry); entry++) {
-	// 	if(data_block->contents[entry].inode_num == (uint32_t)file_inode_num) {
-	// 		while (entry < dir_inode->size / sizeof(FileSystemDirEntry)) {
-	// 			data_block->contents[entry] = data_block->contents[entry+1];
-	// 			entry++;
-	// 		}
-	// 		break;
-	// 	}
-	// }
-	// dir_inode->size -= sizeof(FileSystemDirEntry); // reduce the size
-	// ata_write_blocks(dir_inode->data_block_start, current_dir_buf, 1); // NOTE: this can break things, if data_block_start is incorrect
-	
 	unlink_file_in_dir(dir_inode_num, file_inode_num);
 
 	// unallocate data blocks 
@@ -569,6 +542,12 @@ int32_t unlink(const char* path) {
 
 void shutdown() {
 	kprintf("Shutting Down...\n");
+	kprintf("Clearing File Descriptors...\n");
+
+	for (size_t file = 0; file < sizeof(system_files) / sizeof(SpecialFile); file++) {
+		close(system_files[file].fd);
+    }
+
 	kprintf("Syncing Disk Metadata...\n");
 	ata_write_blocks(0, (uint8_t*)&global_super, SUPER_SIZE);
 	ata_write_blocks(global_super.i_bmap_start, (uint8_t*)global_ibmap, INODE_BITMAP_SIZE);

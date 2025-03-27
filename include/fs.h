@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <flags.h>
 #include <alloc.h>
+#include <file_handlers.h>
 
 
 // number of blocks per
@@ -111,6 +112,17 @@ typedef struct {
 	FileDescriptorEntry entries[32]; // only 16 per process for now
 } FileDescriptorTable;
 
+typedef struct {
+	bool valid;
+	uint32_t file_inode_num;
+	uint32_t dir_inode_num;
+} DirInodePair;
+
+typedef struct {
+	char* dir_path;
+	char* filename;
+} ParsedPath;
+
 
 /**
  * @brief Initializes the file system.
@@ -213,7 +225,6 @@ void list_dir(const char* path, char* buf);
  */
 void shutdown();
 
-// will be called on formatting of the disk, or if they are not guaranteed to be there
-void create_system_files();
+int64_t create_filetype(const char* path, uint8_t file_type, bool allocate_fd);
 
 #endif // FS_H

@@ -12,7 +12,7 @@ typedef struct {
 	void* base_ptr;
 	BitRange range;
 	bool utilized;
-}AllocEntry;
+} AllocEntry;
 
 #define PAGE_SIZE 0x1000 // 4KiB
 #define HEAP_SIZE 0x400 // 1 KiB
@@ -23,7 +23,7 @@ typedef struct {
 	AllocEntry entries[MAX_ALLOCATIONS];
 	uint32_t bitmap[BITMAP_CAPACITY];
 	bool active;
-}AllocArray;
+} AllocArray;
 
 extern uint32_t end_kernel;
 

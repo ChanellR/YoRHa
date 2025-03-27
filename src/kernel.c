@@ -9,6 +9,7 @@
 #include <io.h>
 #include <tests.h>
 #include <alloc.h>
+#include <file_handlers.h>
 
 // can have normal Registers struct passing, then in the isr80, we jump, put &r in eax, push, put the pointer 
 // to the beginning of the stack before the saving of the registers
@@ -31,13 +32,12 @@ void syscall_handler(void* arguments, Registers *r) {
 	kprintf("call id: 0x%x\n", r->err_code);
 }
 
-
 // NOTE: This is little endian
 void main(void) 
 {
 	initialize_allocator();
 	initialize_terminal();
-	initalize_file_system(false);
+	initalize_file_system(true);
 
 	// kprintf("Hello\n");
 	
@@ -50,8 +50,15 @@ void main(void)
 	
 	enable_interrupts();
 	
-	run_tests();
+	// run_tests();
 
+	while (1) {
+		char c;
+		if (read(STDIN, &c, 1) > 0) {
+			write(STDOUT, &c, 1);
+		}
+	}
+	
 	shutdown();
 }
 

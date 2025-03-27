@@ -10,7 +10,9 @@ const char scancode_to_ascii[128] = {
     '\t', 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n', // 0x1C: Enter
     0, 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`', 0, '\\', // 0x2B: Backslash
     'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0, '*', 0, ' ', 0, // 0x39: Space
-    /* F1-F12 and other keys omitted for simplicity */
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 0x3A-0x45: Function keys (F1-F10)
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 0x46-0x55: Extended keys
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0  // 0x56-0x7F: Remaining keys
 };
 
 bool get_keypress(char* c) {
@@ -60,6 +62,7 @@ void timer_install()
 
 void keyboard_handler(Registers *r)
 {
+    static bool released = false;
 	static bool shift_pressed = false;
     unsigned char scancode;
 	UNUSED(r);
@@ -88,6 +91,7 @@ void keyboard_handler(Registers *r)
 			shift_pressed = true;
 			return;
 		}
+        
         /* Just to show you how this works, we simply translate
         *  the keyboard scancode into an ASCII value, and then
         *  display it to the screen. You can get creative and
@@ -100,7 +104,16 @@ void keyboard_handler(Registers *r)
 		if (shift_pressed && output_char >= 'a' && output_char <= 'z') {
 			output_char -= 32; // Convert to uppercase
 		}
-		kputc(output_char);
+
+        // NOTE: blocking until read from
+        // write to the input buffer        
+        if (output_char) {
+            uint32_t next_index = (keyboard_input_buffer.in_index + 1) % RING_BUFFER_CAPACITY;
+            if (next_index != keyboard_input_buffer.out_index) {
+                keyboard_input_buffer.char_buffer[keyboard_input_buffer.in_index] = output_char;
+                keyboard_input_buffer.in_index = next_index;
+            }
+        }
     }
 }
 

@@ -28,6 +28,7 @@ typedef struct {
     uint32_t length;           ///< Length of the range in bits.
 } BitRange;
 
+
 void panic(const char* msg);
 
 

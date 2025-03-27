@@ -23,7 +23,8 @@ uint64_t tty_handler(bool read, int64_t fd, const void* buf, uint32_t count) {
         // write to terminal 
         uint32_t written = 0;
         for (size_t byte = 0; byte < count; byte++) {
-            term.tty_buffer[term.index] = ((uint8_t*)buf)[written++];
+            char c = ((uint8_t*)buf)[written++];
+            term.tty_buffer[term.index] = c;
             term.index = (term.index + 1) % TERMINAL_BUFFER_SIZE;
         }
         render_terminal();

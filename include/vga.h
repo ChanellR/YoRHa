@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdarg.h>
+#include <asm/cpu_io.h>
 
 /* Hardware text mode color constants. */
 enum VGA_COLOR {

@@ -32,6 +32,45 @@ void syscall_handler(void* arguments, Registers *r) {
 	kprintf("call id: 0x%x\n", r->err_code);
 }
 
+int32_t shell() {
+	String curr_command = {.capacity = 0, .contents = 0, .len = 0};
+	String working_dir = {0};
+	APPEND(working_dir, '/');
+
+	write(STDOUT, "$ ", 2);
+	while (1) {
+		char c;
+		if (read(STDIN, &c, 1) > 0) {
+			write(STDOUT, &c, 1);
+			if (c == '\n') {
+				APPEND(curr_command, '\0');
+				
+				if (strcmp(curr_command.contents, "ls") == 0) {
+					char* ptr = str_list_dir(working_dir.contents);
+					write(STDOUT, ptr, strlen(ptr));
+					kfree(ptr);
+				} else if (strcmp(curr_command.contents, "exit") == 0) {
+					kfree(curr_command.contents);
+					kfree(working_dir.contents);
+					return 0;
+				} else {
+					write(STDOUT, "Couldn't parse command\n", 24);
+				}
+
+				curr_command.len = 0; // reset to nothing
+				write(STDOUT, "\n$ ", 3);
+			} else {
+				APPEND(curr_command, c);
+			}
+		}
+
+	}
+
+	kfree(curr_command.contents);
+	kfree(working_dir.contents);
+	return 0;
+}
+
 // NOTE: This is little endian
 void main(void) 
 {
@@ -51,13 +90,7 @@ void main(void)
 	enable_interrupts();
 	
 	// run_tests();
-
-	while (1) {
-		char c;
-		if (read(STDIN, &c, 1) > 0) {
-			write(STDOUT, &c, 1);
-		}
-	}
+	shell();
 	
 	shutdown();
 }

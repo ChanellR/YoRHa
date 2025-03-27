@@ -11,6 +11,7 @@ static inline uint16_t vga_entry(unsigned char uc, uint8_t color)
 	return (uint16_t) uc | (uint16_t) color << 8;
 }
 
+
 static const size_t VGA_WIDTH = 80;
 static const size_t VGA_HEIGHT = 25;
 
@@ -18,6 +19,24 @@ size_t terminal_row;
 size_t terminal_column;
 uint8_t terminal_color;
 uint16_t* terminal_buffer;
+
+void move_cursor(int x, int y) {
+    uint16_t pos = y * VGA_WIDTH + x;
+
+    // Send the low byte of the position
+    outb(0x3D4, 0x0F);
+    outb(0x3D5, (uint8_t)(pos & 0xFF));
+
+    // Send the high byte of the position
+    outb(0x3D4, 0x0E);
+    outb(0x3D5, (uint8_t)((pos >> 8) & 0xFF));
+}
+
+// void hide_cursor() {
+//     // Disable cursor by modifying the cursor start register
+//     outb(0x3D4, 0x0A);  // Select cursor start register
+//     outb(0x3D5, 0x20);  // Disable cursor (bit 5 set to 1)
+// }
 
 // NOTE: may be bug with VGA initialization
 void initialize_terminal(void) {
@@ -31,6 +50,7 @@ void initialize_terminal(void) {
 			terminal_buffer[index] = vga_entry(' ', terminal_color);
 		}
 	}
+	// hide_cursor();
 }
 
 void terminal_clear(void) {
@@ -67,6 +87,8 @@ void kputc(char c) {
 		if (++terminal_row == VGA_HEIGHT)
 			terminal_row = 0;
 	}
+	
+	move_cursor(terminal_column, terminal_row);
 }
 
 void kwrite(const char* data, size_t size) {
@@ -82,7 +104,6 @@ void kputint(int value) {
 	int_to_string(value, buffer);
 	kwrite(buffer, len);
 }
-
 
 void kprint(const char* s) {
 	size_t i = 0;

@@ -60,3 +60,12 @@ void* krealloc(void *ptr, size_t new_size) {
 	PANIC("Couldn't realloc ptr");
 	return NULL;
 }
+
+String concat(String dst, const char* src) {
+	size_t i = 0;
+	while (src[i]) {
+		// NOTE: This may leak memory, test this
+		APPEND(dst, src[i++]);
+	}
+	return dst;
+}

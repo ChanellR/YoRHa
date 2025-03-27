@@ -512,6 +512,31 @@ void list_dir(const char* path, char* buf) {
 	}
 }
 
+// outputs directories to the buffer
+char* str_list_dir(const char* path) {
+	
+	char dir_path[strlen(path) + 1];
+	char filename[32];
+	parse_path(path, dir_path, filename);
+
+	uint32_t dir_inode_num = seek_directory(dir_path);
+	// kprintf("Dir inode: %x\n", dir_inode_num);
+	uint8_t current_dir_buf[BLOCK_BYTES];
+	FileSystemDirDataBlock* dir_ptr = (FileSystemDirDataBlock*)current_dir_buf;
+	
+	FileSystemInode dir_inode = global_inode_table[dir_inode_num];
+	ata_read_blocks(dir_inode.data_block_start, current_dir_buf, 1); // only 1 for now
+	uint32_t files_contained = dir_inode.size / sizeof(FileSystemDirEntry); 
+	char* base = kmalloc(files_contained * 32); // NOTE: arbitrary
+	char* buf = base;
+	for (uint32_t file = 0; file < files_contained; file++) {
+		buf += strcat(path, buf);
+		buf += strcat(dir_ptr->contents[file].name, buf);
+		*(buf++) = '\n';
+	}
+	return base;
+}
+
 int32_t unlink(const char* path) {
 
 	char dir_path[strlen(path)];

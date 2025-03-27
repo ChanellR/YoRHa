@@ -226,5 +226,6 @@ void list_dir(const char* path, char* buf);
 void shutdown();
 
 int64_t create_filetype(const char* path, uint8_t file_type, bool allocate_fd);
+char* str_list_dir(const char* path);
 
 #endif // FS_H

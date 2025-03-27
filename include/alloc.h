@@ -25,6 +25,28 @@ typedef struct {
 	bool active;
 } AllocArray;
 
+typedef struct {
+	size_t len;
+	size_t capacity;
+	char* contents;
+} String;
+
+#define APPEND(s, c) do { \
+	if (s.capacity == 0) { \
+		s.contents = kcalloc(1, 2); \
+		s.capacity = 2; \
+		s.len = 1; \
+		s.contents[0] = c;  \
+	} else if (s.len == s.capacity) { \
+		s.contents = krealloc(s.contents, s.capacity * 2); \
+		s.capacity *= 2; \
+		s.contents[s.len++] = c;							\
+	} else { \
+		s.contents[s.len++] = c; \
+	}			\
+} while (0) \
+
+
 extern uint32_t end_kernel;
 
 void initialize_allocator();
@@ -32,5 +54,6 @@ void* kmalloc(size_t size);
 void kfree(void* ptr);
 void* kcalloc(size_t num, size_t size);
 void* krealloc(void *ptr, size_t new_size);
+String concat(String dst, const char* src);
 
 #endif // ALLOC_H

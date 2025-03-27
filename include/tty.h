@@ -6,16 +6,18 @@
 #include <util.h>
 #include <vga.h>
 
-#define TERMINAL_BUFFER_SIZE 512
+#define TERMINAL_BUFFER_SIZE 1024
 #define RING_BUFFER_CAPACITY 64
 #define SPECIAL_FILE_COUNT 1
 
+#define TERMINAL_WIDTH 35 // in characters
+#define TERMINAL_HEIGHT 20
+
 typedef struct {
     char tty_buffer[TERMINAL_BUFFER_SIZE];
-    size_t index;
-    uint32_t inode_num;
-    uint32_t vertical_line; // what line in the buffer to start from the top at
-    uint32_t top_index; // maybe an alternative, the character we render starting at the top corner
+    size_t index; // what we are currently writing to in the buffer
+    size_t base_index; // index from which to print as to not properly shift vertically
+    // uint32_t inode_num;
 } Terminal;
 
 // keyboard input ring buffer

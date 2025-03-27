@@ -5,7 +5,6 @@ void panic(const char* msg) {
 	asm volatile ("cli; hlt");
 }
 
-// for alloc
 void apply_bitrange(uint32_t* bitmap, BitRange range, bool set) {
 	
 	// NOTE: TO MAKE SURE
@@ -85,3 +84,4 @@ BitRange alloc_bitrange(uint32_t* bitmap, uint32_t capacity, uint32_t count, boo
 void dealloc_bitrange(uint32_t* bitmap, BitRange range) {
 	apply_bitrange(bitmap, range, false);
 }
+

@@ -13,5 +13,8 @@
 
 void timer_install();
 void keyboard_install();
+void serial_interrupt_install();
+
+extern volatile uint64_t timer_counter;
 
 #endif // IO_H

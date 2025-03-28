@@ -28,6 +28,9 @@
 #define ICW4_BUF_MASTER 0x0C /* Buffered mode/master */
 #define ICW4_SFNM 0x10       /* Special fully nested (not) */
 
+#define COM1_IRQ 4 // shared with 3
+#define COM2_IRQ 3 // shared with 4
+
 inline void enable_interrupts() {
 	asm volatile ("sti");
 }

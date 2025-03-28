@@ -25,24 +25,21 @@ bool initalize_file_system(bool force_format) {
 	// just make the struct, and then reference different parts of the 
 	// pointer as the right values 
 
-	// kprintf("Size of FileSysSuper %", sizeof(FileSysSuper));
 	uint8_t buffer[512] = {0};
 	ata_read_sectors(0, 1, buffer); // NOTE: doesn't work when I use read block, because it overflows
 	
 	global_super = *(FileSystemSuper*)buffer;
 	if (!force_format && strcmp(global_super.format_indicator, "Yorha") == 0) {
 		kprintf("Disk Recognized\n");
-		// TODO: load structures
-		// kprintf("before inode_bitmap: %b\n", global_ibmap[0]);		
-		// kprintf("after inode_bitmap: %b\n", global_ibmap[0]);
 		ata_read_blocks(global_super.i_bmap_start, (uint8_t*)global_ibmap, INODE_BITMAP_SIZE);
 		ata_read_blocks(global_super.d_bmap_start, (uint8_t*)global_dbmap, DATA_BITMAP_SIZE);
 		ata_read_blocks(global_super.inode_table_start, (uint8_t*)global_inode_table, INODE_TABLE_SIZE);
+		open_system_files();
 		return true;	// disk formatted
 	}
 
-	kprintf("Formatting Disk...\n");
 	// formatting disk
+	kprintf("Formatting Disk...\n");
 	
 	// fill super
 	strcpy(global_super.format_indicator, "Yorha");
@@ -58,7 +55,6 @@ bool initalize_file_system(bool force_format) {
 
 	// clear occupation bitmaps
 	global_ibmap[0] |= 1 << 31;
-	// global_dbmap[0] |= 1 << 31;
 	alloc_bitrange(global_dbmap, BLOCK_BYTES * 8, DATA_REGION_START + 1, false); // NOTE: permanently allocates all blocks used for metadata, and the first
 	ata_write_blocks(global_super.i_bmap_start, (uint8_t*)global_ibmap, 1);
 	ata_write_blocks(global_super.d_bmap_start, (uint8_t*)global_dbmap, 1);
@@ -73,13 +69,10 @@ bool initalize_file_system(bool force_format) {
 	ata_write_blocks(global_super.inode_table_start, (uint8_t*)global_inode_table, inode_table_length);
 
 	// write empty directory
-	// uint8_t root_data_buffer[BLOCK_BYTES] = {0};
-	// FileSystemDirDataBlock* dir_tbl_ptr = (FileSystemDirDataBlock*)root_data_buffer;
-	// dir_tbl_ptr->files_contained = 0;
 	ata_write_blocks(global_super.data_start, NULL, 1);
 
 	create_system_files();
-
+	open_system_files();
 	return true;
 }
 

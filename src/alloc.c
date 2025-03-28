@@ -1,26 +1,34 @@
 #include <alloc.h>
 
-static AllocArray global_alloc_state = {0};
+/**
+ * We need to allocate pages to the OS such that it can allocate memory in that region, I'll just stick with this static setup for now
+ */
+static AllocArray kernel_allocator = {0};
+static page_alloc_array_t page_allocator = {0};
 
 void initialize_allocator() {
-	global_alloc_state.bottom = (void*)&end_kernel;	
-	global_alloc_state.active = true;
+	// TODO: maybe mix these?
+	kernel_allocator.bottom = (void*)&end_kernel;	
+	kernel_allocator.active = true;
+	// page_allocator.bottom = (void*)((uintptr_t)kernel_allocator.bottom + KERNEL_HEAP_SIZE);	
+	page_allocator.bottom = (void*)0; // start from the beginning
+	page_allocator.active = true;
 }
 
 void* kmalloc(size_t size) {
-	ASSERT(global_alloc_state.active, "allocator must be initialized first");
+	ASSERT(kernel_allocator.active, "allocator must be initialized first");
 	AllocEntry new_entry;
-	BitRange allocation = alloc_bitrange(global_alloc_state.bitmap, BITMAP_CAPACITY, size, true);
+	BitRange allocation = alloc_bitrange(kernel_allocator.bitmap, KERNEL_BITMAP_CAPACITY, size, true);
 	if (allocation.length == 0) {
 		PANIC("Insufficient space in heap");
 	}
 	// NOTE: this may not be going to the right memory address
-	new_entry.base_ptr = global_alloc_state.bottom + allocation.start; // start is number of bytes
+	new_entry.base_ptr = kernel_allocator.bottom + allocation.start; // start is number of bytes
 	new_entry.range = allocation;
 	new_entry.utilized = true;
 	for (size_t entry = 0; entry < MAX_ALLOCATIONS; entry++) {
-		if (!(global_alloc_state.entries[entry].utilized)) {
-			global_alloc_state.entries[entry] = new_entry;
+		if (!(kernel_allocator.entries[entry].utilized)) {
+			kernel_allocator.entries[entry] = new_entry;
 			return new_entry.base_ptr;
 		}
 	}
@@ -29,11 +37,11 @@ void* kmalloc(size_t size) {
 }
 
 void kfree(void* ptr) {
-	ASSERT(global_alloc_state.active, "allocator must be initialized first");
+	ASSERT(kernel_allocator.active, "allocator must be initialized first");
 	for (size_t entry = 0; entry < MAX_ALLOCATIONS; entry++) {
-		if (global_alloc_state.entries[entry].base_ptr == ptr) {
-			global_alloc_state.entries[entry].utilized = false;
-			dealloc_bitrange(global_alloc_state.bitmap, global_alloc_state.entries[entry].range);
+		if (kernel_allocator.entries[entry].base_ptr == ptr) {
+			kernel_allocator.entries[entry].utilized = false;
+			dealloc_bitrange(kernel_allocator.bitmap, kernel_allocator.entries[entry].range);
 			return;
 		}
 	}
@@ -41,20 +49,20 @@ void kfree(void* ptr) {
 }
 
 void* kcalloc(size_t num, size_t size) {
-	ASSERT(global_alloc_state.active, "allocator must be initialized first");
+	ASSERT(kernel_allocator.active, "allocator must be initialized first");
 	void* ptr = kmalloc(num * size);
 	memset(ptr, 0, num * size);
 	return ptr;
 }
 
 void* krealloc(void *ptr, size_t new_size) {
-	ASSERT(global_alloc_state.active, "allocator must be initialized first");
+	ASSERT(kernel_allocator.active, "allocator must be initialized first");
 	void* new_ptr = kmalloc(new_size);
 	for (size_t entry = 0; entry < MAX_ALLOCATIONS; entry++) {
-		if (global_alloc_state.entries[entry].base_ptr == ptr) {
-			global_alloc_state.entries[entry].utilized = false;
-			dealloc_bitrange(global_alloc_state.bitmap, global_alloc_state.entries[entry].range);
-			return memmove(new_ptr, ptr, global_alloc_state.entries[entry].range.length); // length will be number of bytes
+		if (kernel_allocator.entries[entry].base_ptr == ptr) {
+			kernel_allocator.entries[entry].utilized = false;
+			dealloc_bitrange(kernel_allocator.bitmap, kernel_allocator.entries[entry].range);
+			return memmove(new_ptr, ptr, kernel_allocator.entries[entry].range.length); // length will be number of bytes
 		}
 	}
 	PANIC("Couldn't realloc ptr");
@@ -81,12 +89,18 @@ String concat(String dst, const char* src) {
 	return dst;
 }
 
-StringList string_split(const char* s, char delim) {
+StringList string_split(const char* s, char delim, bool reserve_quotes) {
 	StringList sl = {.len = 0, .capacity = 0};
 	String curr = {0};
 	size_t i = 0;
+	bool in_string = false;
 	while (s[i]) {
-		if (s[i] == delim) {
+
+		if (s[i] == '\"') {
+			in_string = !in_string;
+		}
+
+		if (s[i] == delim && (!in_string || !reserve_quotes)) {
 			APPEND(curr, '\0');
 			APPEND(sl, curr);
 			curr.capacity = 0; // NOTE: allocate a completely new pointer
@@ -104,3 +118,35 @@ StringList string_split(const char* s, char delim) {
 	return sl;
 }
 
+void* allocate_page() {
+	ASSERT(page_allocator.active, "allocator must be initialized first");
+	AllocEntry new_entry;
+	BitRange allocation = alloc_bitrange(page_allocator.bitmap, PAGE_BITMAP_CAPACITY, 1, true);
+	if (allocation.length == 0) {
+		PANIC("Insufficient space in memory for page allocation");
+	}
+	// NOTE: this may not be going to the right memory address
+	new_entry.base_ptr = page_allocator.bottom + (allocation.start * PAGE_SIZE); // start is number of bytes
+	new_entry.range = allocation;
+	new_entry.utilized = true;
+	for (size_t entry = 0; entry < MAX_ALLOCATIONS; entry++) {
+		if (!(page_allocator.entries[entry].utilized)) {
+			page_allocator.entries[entry] = new_entry;
+			return new_entry.base_ptr;
+		}
+	}
+	PANIC("Maximum allocations reached");
+	return NULL;
+}
+
+void free_page(void* ptr) {
+	ASSERT(page_allocator.active, "allocator must be initialized first");
+	for (size_t entry = 0; entry < MAX_ALLOCATIONS; entry++) {
+		if (page_allocator.entries[entry].base_ptr == ptr) {
+			page_allocator.entries[entry].utilized = false;
+			dealloc_bitrange(page_allocator.bitmap, page_allocator.entries[entry].range);
+			return;
+		}
+	}
+	PANIC("Couldn't free ptr");
+}

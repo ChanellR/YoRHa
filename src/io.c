@@ -1,9 +1,5 @@
 #include <io.h>
 
-static inline uint8_t get_scancode() {
-    while ((inb(KEYBOARD_STATUS_PORT) & 1) == 0); // Wait until a key is pressed
-    return inb(KEYBOARD_DATA_PORT);
-}
 
 const char scancode_to_ascii[128] = {
     0,  0, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b', // 0x0E: Backspace
@@ -25,14 +21,16 @@ const char scancode_to_ascii_shifted[128] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0  // 0x56-0x7F: Remaining keys
 };
 
+static inline uint8_t get_scancode() {
+    while ((inb(KEYBOARD_STATUS_PORT) & 1) == 0); // Wait until a key is pressed
+    return inb(KEYBOARD_DATA_PORT);
+}
+
 bool get_keypress(char* c) {
     uint8_t scancode = get_scancode();
-    
     if (scancode & 0x80) {
-        // Key release event (ignore for now)
         return false;
     }
-    
     *c = scancode_to_ascii[scancode];
     return true;
 }
@@ -44,57 +42,36 @@ void timer_phase(int hz) {
     outb(0x40, divisor >> 8);     /* Set high byte of divisor */
 }
 
+volatile uint64_t timer_counter = 0;
 void timer_handler(Registers *r) {
-	static int timer_ticks = 0;
-    // /* Increment our 'tick count' */
-    // timer_ticks++;
-
-    // /* Every 18 clocks (approximately 1 second), we will
-    // *  display a message on the screen */
-    // if (timer_ticks % 100 == 0)
-    // {
-    //     kprintf("One second has passed\n");
-    // }
-	UNUSED(timer_ticks);
+    timer_counter++;
 	UNUSED(r);
 }
 
 void timer_install() {
-    /* Installs 'timer_handler' to IRQ0 */
-	timer_phase(100);
+	timer_phase(100); // every tick is 10 ms
     irq_install_handler(0, timer_handler);
-
 }
 
 void keyboard_handler(Registers *r) {
-    static bool released = false;
-    UNUSED(released);
 
-	static bool shift_pressed = false;
 	UNUSED(r);
+	static bool shift_pressed = false;
 
-    /* Read from the keyboard's data buffer */
-    uint8_t scancode = inb(0x60);
-
-    /* If the top bit of the byte we read from the keyboard is
-    *  set, that means that a key has just been released */
-    if (scancode & 0x80)
+    uint8_t scancode = inb(KEYBOARD_DATA_PORT);
+    if (scancode & 0x80) // was a release event
     {
-		// Handle key release events for shift keys
-		if (scancode == 0xAA || scancode == 0xB6) { // Left or Right Shift released
+		if (scancode == 0xAA || scancode == 0xB6) { 
 			shift_pressed = false;
 			return;
 		}
     } else {
-		if (scancode == 0x2A || scancode == 0x36) { // Left or Right Shift released
+		if (scancode == 0x2A || scancode == 0x36) { 
 			shift_pressed = true;
 			return;
 		}
 
 		char output_char = (shift_pressed) ? scancode_to_ascii_shifted[scancode] : scancode_to_ascii[scancode];
-		// if (shift_pressed && output_char >= 'a' && output_char <= 'z') {
-		// 	output_char -= 32; // Convert to uppercase
-		// }
 
         // NOTE: blocking until read from write to the input buffer        
         if (output_char) {
@@ -109,4 +86,20 @@ void keyboard_handler(Registers *r) {
 
 void keyboard_install() {
 	irq_install_handler(1, keyboard_handler);
+}
+
+void serial_interrupt_handler(Registers* r) {
+    UNUSED(r);
+    char output_char = read_serial();
+    if (output_char) {
+        uint32_t next_index = (serial_port_buffer.in_index + 1) % RING_BUFFER_CAPACITY;
+        if (next_index != serial_port_buffer.out_index) {
+            serial_port_buffer.char_buffer[serial_port_buffer.in_index] = output_char;
+            serial_port_buffer.in_index = next_index;
+        }
+    }
+}
+
+void serial_interrupt_install() {
+    irq_install_handler(COM1_IRQ, serial_interrupt_handler);
 }

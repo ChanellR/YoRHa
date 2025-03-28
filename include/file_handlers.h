@@ -24,9 +24,20 @@ typedef struct {
     int32_t fd;
 } SpecialFile;
 
+typedef struct {
+    char char_buffer[RING_BUFFER_CAPACITY];
+    uint32_t tty_fd;
+    size_t in_index;
+    size_t out_index;
+} RingBuffer;
+
+extern RingBuffer keyboard_input_buffer;
+extern RingBuffer serial_port_buffer;
+
 // will be called on formatting of the disk, or if they are not guaranteed to be there
 // uint64_t tty_handler(bool read, int64_t fd, const void* buf, uint32_t count);
 void create_system_files();
+void open_system_files();
 
 extern SpecialFile system_files[2];
 

@@ -1,6 +1,5 @@
 #include <tty.h>
 
-KeyboardInputBuffer keyboard_input_buffer = {0};
 Terminal term = {0};
 
 void initialize_term(int64_t fd) {

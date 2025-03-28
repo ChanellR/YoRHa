@@ -5,3 +5,6 @@ isodir
 
 # drive image
 disk
+
+# cache
+scripts/__pycache__

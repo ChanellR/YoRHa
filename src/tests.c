@@ -200,7 +200,7 @@ bool test_malloc() {
 bool test_string_split() {
     bool passing = true;
     StringList sl = {0};
-	sl = string_split("Hello World", ' ');
+	sl = string_split("Hello World", ' ', false);
     passing &= strcmp(sl.contents[0].contents, "Hello") == 0;
     passing &= strcmp(sl.contents[1].contents, "World") == 0;
     FREE(sl);

@@ -1,5 +1,8 @@
 #include <file_handlers.h>
 
+RingBuffer keyboard_input_buffer = {0};
+RingBuffer serial_port_buffer = {0};
+
 void empty_initiazer(int32_t fd) {
     UNUSED(fd);
 }
@@ -35,7 +38,6 @@ uint64_t tty_handler(bool read, int64_t fd, const void* buf, uint32_t count) {
 
 void serial_initializer(int32_t fd) {
     UNUSED(fd);
-    kprint("done\n");
     init_serial();
 }
 
@@ -48,6 +50,7 @@ uint64_t serial_handler(bool read, int64_t fd, const void* buf, uint32_t count) 
             return 1;
         } 
     } else {
+        // if (is_transmit_empty() == 0);
         if (is_transmit_empty()) {
             outb(COM1, small_buf[0]);
             return 1;
@@ -57,16 +60,28 @@ uint64_t serial_handler(bool read, int64_t fd, const void* buf, uint32_t count) 
 }
 
 void create_system_files() {
-    mkdir("/dev"); // this should just go through 
+
+    if (mkdir("/dev") == 1) {
+        panic(error_msg); // this should just go through 
+    }
+
     for (size_t file = 0; file < sizeof(system_files) / sizeof(SpecialFile); file++) {
         char whole_name[48] = "/dev/";
         strcat(system_files[file].filename, whole_name + 5);
+        ASSERT(create_filetype(whole_name, FILE_TYPE_SPECIAL, false) != -1, "Failure in system files assignment");
+    }
+}
 
-        int32_t fd = create_filetype(whole_name, FILE_TYPE_SPECIAL, true);
-        ASSERT(fd != -1, "Failure in system files assignment");
+void open_system_files() {
+    for (size_t file = 0; file < sizeof(system_files) / sizeof(SpecialFile); file++) {
+        char whole_name[48] = "/dev/";
+        strcat(system_files[file].filename, whole_name + 5);
+        int32_t fd = open(whole_name);
+        if (fd == -1) {
+            panic(error_msg);
+        }
         system_files[file].fd = fd;
         system_files->initialization_func(fd);
-        // kprintf("name: %s, fd: %u\n", whole_name, fd);
     }
 }
 

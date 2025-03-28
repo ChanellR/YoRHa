@@ -88,11 +88,84 @@ int32_t exec_mkdir(int32_t stdin, int32_t stdout, StringList cmd) {
 	return create_filetype(cmd.contents[1].contents, FILE_TYPE_DIR, false);
 }
 
-#define HANDLE(cmd, program) else if (PREFIX(cmd, #program)) { \
-	if(exec_program(STDIN, exp1_stdout, cmd) == -1) { \
-		write(STDOUT, error_msg, strlen(error_msg)); \
-	}; \
-}  \
+void sleep(float seconds) {
+	// blocks, timer currently ticking at 100 HZ, 10 ms per tick
+	static int timer_hz = 100;
+	uint32_t ticks_to_wait = (uint32_t)(seconds * timer_hz);
+	uint32_t start = timer_counter;
+	while (timer_counter < start + ticks_to_wait);
+}
+
+// cmd: stat 'filename'
+int32_t exec_stat(int32_t stdin, int32_t stdout, StringList cmd) {
+	UNUSED(stdin); UNUSED(stdout);
+	int32_t fd = open(cmd.contents[1].contents);
+	if (fd == -1) {
+		return -1;
+	}
+
+	close(fd);
+	return 0;
+}
+
+// cmd: sget `filename`
+int32_t exec_sget(int32_t stdin, int32_t stdout, StringList cmd) {
+	// Waits until a synchronizing message is sent over serial with a timeout
+	// writes the incoming data into `filename`
+	UNUSED(stdin); UNUSED(stdout);
+	int32_t fd = open(cmd.contents[1].contents);
+	if (fd == -1) {
+		return -1;
+	}
+	
+	#define STX 0x02 // Start of Text
+	#define ETX 0x03 // End of Text
+
+	write(STDOUT, "waiting for serial port to initiate communication...\n", 54);
+
+	char c;
+	bool in_message = false;
+	uint64_t time_out_duration = (uint32_t)(5.0 * 100);
+	uint64_t base_time = timer_counter;
+	while (1) {
+		if (timer_counter > base_time + time_out_duration) {
+			PUSH_ERROR("sget timed out, couldn't complete transfer\n");
+			close(fd);
+			return -1;
+		} 
+		
+		while (read(SERIAL, &c, 1) > 0) {
+			base_time = timer_counter;
+			if (c == STX) {
+				write(STDOUT, "beginning download...\n", 23);
+				in_message = true;
+				continue;
+			} else if (c == ETX) {
+				write(STDOUT, "download complete...\n", 22);
+				close(fd);
+				return (in_message) ? 0 : -1;
+			}
+
+			if (in_message) {
+				while (!write(fd, &c, 1)); // write until it succeeds
+			}
+		}
+	}
+
+	#undef STX
+	#undef ETX
+
+	close(fd);
+	return -1;
+}
+
+// cmd: run `filename`
+int32_t exec_run(int32_t stdin, int32_t stdout, StringList cmd) {
+	// attempts to load and execute the file
+	UNUSED(stdin); UNUSED(stdout); UNUSED(cmd);
+	PUSH_ERROR("Not Implmented");
+	return -1;
+}
 
 int32_t shell() {
 
@@ -129,7 +202,8 @@ int32_t shell() {
 			}
 			APPEND(curr_command, '\0');
 			
-			StringList cmd = string_split(curr_command.contents, ' ');
+			// TODO: parse quotations 
+			StringList cmd = string_split(curr_command.contents, ' ', true);
 
 			// look for `>`, then we change fd's
 			int32_t exp1_stdout = STDOUT;
@@ -166,6 +240,8 @@ int32_t shell() {
 				exit_code = exec_rm(STDIN, exp1_stdout, cmd);
 			} else if (PREFIX(cmd, "mkdir")) {
 				exit_code = exec_mkdir(STDIN, exp1_stdout, cmd);
+			} else if (PREFIX(cmd, "sget")) {
+				exit_code = exec_sget(STDIN, exp1_stdout, cmd);
 			} else {
 				write(STDOUT, "Couldn't parse command\n", 24);
 			}
@@ -191,9 +267,9 @@ int32_t shell() {
 // NOTE: This is little endian
 void main(void) 
 {
-	initialize_allocator();
+	initialize_allocator();	
 	initialize_terminal();
-	initalize_file_system(true);
+	initalize_file_system(false);
 	
 	gdt_install();
 	idt_install();	
@@ -201,11 +277,12 @@ void main(void)
 	irq_install();
 	timer_install();
 	keyboard_install();
-	
-	enable_interrupts();
-	
-	run_tests();
+	serial_interrupt_install();
 
+	enable_interrupts();
+
+	// run_tests();
+	
 	shell();
 
 	shutdown();

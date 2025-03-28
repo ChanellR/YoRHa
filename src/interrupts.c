@@ -182,7 +182,7 @@ void isrs_install()
 
 void irq_install()
 {
-    irq_remap(0x20, 0x28);
+    irq_remap(0x20, 0x28); // TODO: figure out what this does
 
     idt_set_gate(32, (unsigned)irq0, 0x08, 0x8E);
     idt_set_gate(33, (unsigned)irq1, 0x08, 0x8E);
@@ -212,7 +212,7 @@ void irq_install()
  *  serviced as a 'locking' mechanism to prevent an IRQ from
  *  happening and messing up kernel data structures */
 void isr_handler(Registers *r) {
-    kprint("Entered\n");
+    // kprint("Entered\n");
     if (r->int_no < 32)
     {
         kprintf(exception_messages[r->int_no]);
@@ -290,10 +290,14 @@ void irq_remap(int offset1, int offset2)
  *  an EOI, you won't raise any more IRQs */
 void irq_handler(Registers *r)
 {
+    // kprintf("fwfwef\n");
     /* This is a blank function pointer */
     void (*handler)(Registers *r);
-
-    /* Find out if we have a custom handler to run for this
+    
+    // if (r->int_no > 32)
+        // kprintf("routine: %d\n", r->int_no);
+    
+        /* Find out if we have a custom handler to run for this
      *  IRQ, and then finally, run it */
     handler = irq_routines[r->int_no - 32];
     if (handler)

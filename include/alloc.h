@@ -5,14 +5,17 @@
 #include <stdint.h>
 #include <util.h>
 #include <string.h>
+#include <paging.h>
 
 // we will allocate 1KB to begin with
 // we will allocate on the granularity of bytes
 
-#define PAGE_SIZE 0x1000 // 4KiB
-#define HEAP_SIZE 0x1000 // 1 KiB
+// #define PAGE_SIZE 0x1000 // 4KiB
+#define KERNEL_HEAP_SIZE 0x1000 // 4 KiB
 #define MAX_ALLOCATIONS 256
-#define BITMAP_CAPACITY HEAP_SIZE/sizeof(uint32_t) // how many bytes are we allocating
+
+#define KERNEL_BITMAP_CAPACITY KERNEL_HEAP_SIZE / sizeof(uint32_t) // how many bytes are we allocating
+#define PAGE_BITMAP_CAPACITY MAX_ALLOCATIONS / sizeof(uint32_t) // how many individual pages are we allocating
 
 #define MATCH(str, cstr) strcmp(str.contents, cstr) == 0
 #define PREFIX(cmd, prefix) strcmp(cmd.contents[0].contents, prefix) == 0
@@ -39,9 +42,16 @@ typedef struct {
 typedef struct {
 	void* bottom;
 	AllocEntry entries[MAX_ALLOCATIONS];
-	uint32_t bitmap[BITMAP_CAPACITY];
+	uint32_t bitmap[KERNEL_BITMAP_CAPACITY];
 	bool active;
 } AllocArray;
+
+typedef struct {
+	void* bottom;
+	AllocEntry entries[MAX_ALLOCATIONS];
+	uint32_t bitmap[PAGE_BITMAP_CAPACITY];
+	bool active;
+} page_alloc_array_t;
 
 typedef struct {
 	size_t len;
@@ -71,9 +81,12 @@ void* krealloc(void *ptr, size_t new_size);
 void kfree(void* ptr);
 
 String concat(String dst, const char* src);
-StringList string_split(const char* s, char delim);
+StringList string_split(const char* s, char delim, bool reserve_quotes);
 
 void free_string_list(StringList sl);
 void free_string(String s);
+
+void* allocate_page();
+void free_page(void* ptr);
 
 #endif // ALLOC_H

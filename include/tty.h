@@ -19,15 +19,6 @@ typedef struct {
     // uint32_t inode_num;
 } Terminal;
 
-// keyboard input ring buffer
-typedef struct {
-    char char_buffer[RING_BUFFER_CAPACITY];
-    uint32_t tty_fd;
-    size_t in_index;
-    size_t out_index;
-} KeyboardInputBuffer;
-
-extern KeyboardInputBuffer keyboard_input_buffer;
 extern Terminal term;
 
 // void initialize_term(int64_t fd);

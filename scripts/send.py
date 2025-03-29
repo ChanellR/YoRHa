@@ -29,3 +29,15 @@ print("Completed")
 #         stdin_fd.flush()
 # else:
 #     print(f"Cannot attach to PID {pid}. Stdin path does not exist.")
+
+# def mem_page(memory_address):
+#     table = memory_address >> 22 & 0x3FF
+#     page = memory_address >> 12 & 0x3FF
+#     return table, page
+
+# MAIN = 0xc02066f0
+# ERR_MSG = 0xc0310de0
+# NEW_PAGE = 0x401000
+# print(mem_page(MAIN))
+# print(mem_page(ERR_MSG))
+# print(mem_page(NEW_PAGE))

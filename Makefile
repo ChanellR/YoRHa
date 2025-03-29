@@ -37,11 +37,11 @@ disk/hd.img:
 	qemu-img create -f raw disk/hd.img 1M
 	
 run: $(KERNEL_BIN) disk/hd.img
-	$(QEMU) -m 1024M -drive file=disk/hd.img,format=raw -kernel $(KERNEL_BIN) -serial stdio 
+	$(QEMU) -m 1024M -drive file=disk/hd.img,format=raw -kernel $(KERNEL_BIN) -serial stdio -no-reboot
 
 
 debug: $(KERNEL_BIN) disk/hd.img
-	$(QEMU) -s -S -m 1024M -drive file=disk/hd.img,format=raw -kernel $(KERNEL_BIN) -serial stdio
+	$(QEMU) -s -S -m 1024M -drive file=disk/hd.img,format=raw -kernel $(KERNEL_BIN) -serial stdio -d int
 
 clean_all: clean clean_disk
 

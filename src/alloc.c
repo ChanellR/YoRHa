@@ -7,12 +7,27 @@ static AllocArray kernel_allocator = {0};
 static page_alloc_array_t page_allocator = {0};
 
 void initialize_allocator() {
-	// TODO: maybe mix these?
-	kernel_allocator.bottom = (void*)&end_kernel;	
-	kernel_allocator.active = true;
-	// page_allocator.bottom = (void*)((uintptr_t)kernel_allocator.bottom + KERNEL_HEAP_SIZE);	
+
 	page_allocator.bottom = (void*)0; // start from the beginning
 	page_allocator.active = true;
+
+	BitRange kernel_range = alloc_bitrange(page_allocator.bitmap, PAGE_BITMAP_CAPACITY, 1024, false);
+	ASSERT(kernel_range.length == 1024 && kernel_range.start == 0, "Should be the same");
+
+	AllocEntry kernel_entry;
+	kernel_entry.base_ptr = page_allocator.bottom; // start is number of bytes
+	kernel_entry.range = kernel_range;
+	kernel_entry.utilized = true;
+
+	ASSERT(!page_allocator.entries[0].utilized, "Shouldn't be currently utilized");
+	page_allocator.entries[0] = kernel_entry;
+
+	// TODO: maybe mix these?
+	kernel_allocator.bottom = allocate_page(); // NOTE: is this address going to be ok to access
+	kernel_allocator.active = true;
+	if (map_page(kernel_allocator.bottom, kernel_allocator.bottom, PAGE_WRITE | PAGE_USER) == -1) {
+		PANIC("Couldn't allocate heap");
+	}
 }
 
 void* kmalloc(size_t size) {
@@ -121,7 +136,7 @@ StringList string_split(const char* s, char delim, bool reserve_quotes) {
 void* allocate_page() {
 	ASSERT(page_allocator.active, "allocator must be initialized first");
 	AllocEntry new_entry;
-	BitRange allocation = alloc_bitrange(page_allocator.bitmap, PAGE_BITMAP_CAPACITY, 1, true);
+	BitRange allocation = alloc_bitrange(page_allocator.bitmap, PAGE_BITMAP_CAPACITY, 1, false);
 	if (allocation.length == 0) {
 		PANIC("Insufficient space in memory for page allocation");
 	}

@@ -14,6 +14,9 @@
 #define PAGE_WRITE   0x2
 #define PAGE_USER    0x4
 
+// to be shared amongst all process to be able to jump to kernel
+#define HALF_SPACE_TABLE 768
+
 // Typedefs for page directory and table entries
 typedef uint32_t page_entry_t;
 
@@ -30,7 +33,8 @@ typedef struct {
 // Function declarations
 page_directory_t* create_page_directory();
 page_table_t* create_page_table();
-int map_page(page_directory_t* page_directory, uint32_t virtual_address, uint32_t physical_address, uint32_t flags);
+// int map_page(page_directory_t* page_directory, uint32_t virtual_address, uint32_t physical_address, uint32_t flags);
 void load_process(page_directory_t* page_directory, uint32_t* process_memory, size_t process_size, uint32_t base_virtual_address);
+int map_page(void* physaddr, void* virtualaddr, unsigned int flags);
 
 #endif // PAGING_H

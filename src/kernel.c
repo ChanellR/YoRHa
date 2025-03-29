@@ -11,6 +11,7 @@
 #include <alloc.h>
 #include <file_handlers.h>
 #include <serial.h>
+#include <paging.h>
 
 // can have normal Registers struct passing, then in the isr80, we jump, put &r in eax, push, put the pointer 
 // to the beginning of the stack before the saving of the registers
@@ -270,15 +271,16 @@ void main(void)
 	initialize_allocator();	
 	initialize_terminal();
 	initalize_file_system(false);
-	
+
 	gdt_install();
 	idt_install();	
 	isrs_install();
 	irq_install();
+
 	timer_install();
 	keyboard_install();
 	serial_interrupt_install();
-
+	
 	enable_interrupts();
 
 	// run_tests();

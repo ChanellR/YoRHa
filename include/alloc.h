@@ -13,9 +13,9 @@
 // #define PAGE_SIZE 0x1000 // 4KiB
 #define KERNEL_HEAP_SIZE 0x1000 // 4 KiB
 #define MAX_ALLOCATIONS 256
-
+#define PAGE_SIZE 4096
 #define KERNEL_BITMAP_CAPACITY KERNEL_HEAP_SIZE / sizeof(uint32_t) // how many bytes are we allocating
-#define PAGE_BITMAP_CAPACITY MAX_ALLOCATIONS / sizeof(uint32_t) // how many individual pages are we allocating
+// #define PAGE_BITMAP_CAPACITY MAX_ALLOCATIONS / sizeof(uint32_t) // how many individual pages are we allocating
 
 #define MATCH(str, cstr) strcmp(str.contents, cstr) == 0
 #define PREFIX(cmd, prefix) strcmp(cmd.contents[0].contents, prefix) == 0
@@ -46,6 +46,9 @@ typedef struct {
 	bool active;
 } AllocArray;
 
+// We need to map all pages within our address space, and keep track 
+#define VM_MEMORY (1 << 30) // 1024 MB
+#define PAGE_BITMAP_CAPACITY VM_MEMORY / PAGE_SIZE
 typedef struct {
 	void* bottom;
 	AllocEntry entries[MAX_ALLOCATIONS];

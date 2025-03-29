@@ -31,10 +31,11 @@ typedef struct {
 } page_table_t;
 
 // Function declarations
-page_directory_t* create_page_directory();
 page_table_t* create_page_table();
 // int map_page(page_directory_t* page_directory, uint32_t virtual_address, uint32_t physical_address, uint32_t flags);
-void load_process(page_directory_t* page_directory, uint32_t* process_memory, size_t process_size, uint32_t base_virtual_address);
+// void load_process(page_directory_t* page_directory, uint32_t* process_memory, size_t process_size, uint32_t base_virtual_address);
 int map_page(void* physaddr, void* virtualaddr, unsigned int flags);
+void load_process(uint32_t* process_memory, size_t process_size, uint32_t base_virtual_address);
+void enable_paging(page_directory_t* page_directory);
 
 #endif // PAGING_H

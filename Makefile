@@ -9,9 +9,12 @@ LDFLAGS=-T linker.ld -g
 SRC_DIR=src
 BUILD_DIR=build
 INCLUDE_DIR=include 
+PRG_DIR=src/programs
 
 # Find all source files and convert to object file names in the build directory
 SRC_FILES=$(shell find $(SRC_DIR) -type f \( -name '*.c' -o -name '*.s' \))
+PRG_FILES=$(shell find $(PRG_DIR) -type f \( -name '*.s' \))
+
 KERNEL_OBJS=$(patsubst $(SRC_DIR)/%, $(BUILD_DIR)/%, $(SRC_FILES:.c=.o))
 KERNEL_OBJS := $(KERNEL_OBJS:.s=.o)
 KERNEL_BIN=$(BUILD_DIR)/kernel.bin

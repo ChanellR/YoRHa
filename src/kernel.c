@@ -160,11 +160,54 @@ int32_t exec_sget(int32_t stdin, int32_t stdout, StringList cmd) {
 	return -1;
 }
 
+typedef struct {
+    uint32_t size;   // Program size
+    uint32_t entry;  // Entry point offset
+    char magic[4];   // Magic number ("FASH")
+} header_t;
+
 // cmd: run `filename`
 int32_t exec_run(int32_t stdin, int32_t stdout, StringList cmd) {
 	// attempts to load and execute the file
-	UNUSED(stdin); UNUSED(stdout); UNUSED(cmd);
-	PUSH_ERROR("Not Implmented");
+	UNUSED(stdin); UNUSED(stdout); 
+	// UNUSED(cmd);
+	// PUSH_ERROR("Not Implmented");
+
+	// creates page directory for process
+	page_directory_t process_dir = {0};
+
+	// synchronizes shared kernel memory space
+	uint32_t kernel_page_addr = *(uint32_t*)(0xFFFFF000 + HALF_SPACE_TABLE * 4);
+	process_dir.entries[HALF_SPACE_TABLE] = kernel_page_addr;
+	// enable_paging(&process_dir);
+
+	// maps pages in user space
+	uint32_t program_memory[0x10];
+	int32_t fd = open(cmd.contents[1].contents);
+	if (fd == -1) {
+		// enable_paging(&)
+		PANIC("Need to revert paging");
+		return -1;
+	}
+	header_t header;
+	read(fd, &header, sizeof(header_t));
+	
+	seek(fd, 0, SEEK_SET);
+	read(fd, program_memory, 0x10);
+	load_process(program_memory, header.size, 0);
+
+	// saves context
+	// calls the process
+	asm volatile (
+		"pusha;"                // Push all general-purpose registers
+		"call *%0;"             // Call the entry point
+		"popa;"                 // Pop all general-purpose registers
+		:
+		: "r"(header.entry)     // Pass the entry point address
+		: "memory"              // Indicate memory is clobbered
+	);
+
+	// at some point return
 	return -1;
 }
 
@@ -243,6 +286,8 @@ int32_t shell() {
 				exit_code = exec_mkdir(STDIN, exp1_stdout, cmd);
 			} else if (PREFIX(cmd, "sget")) {
 				exit_code = exec_sget(STDIN, exp1_stdout, cmd);
+			} else if (PREFIX(cmd, "run")) {
+				exit_code = exec_run(STDIN, exp1_stdout, cmd);
 			} else {
 				write(STDOUT, "Couldn't parse command\n", 24);
 			}

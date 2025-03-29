@@ -14,7 +14,13 @@ process = subprocess.Popen(
     bufsize=1  # Line-buffered
 )
 
-message = "Hello World"
+# Prompt the user to select a binary file
+binary_file_path = input("Enter the path to the binary file: ")
+
+# Read the binary file content
+with open(binary_file_path, "rb") as binary_file:
+    message = binary_file.read()
+    
 input("Press any key to being transmission")
 process.stdin.write(f"\2{message}\3")
 process.stdin.flush()  # Ensure the input is sent

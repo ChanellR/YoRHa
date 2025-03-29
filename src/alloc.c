@@ -11,6 +11,7 @@ void initialize_allocator() {
 	page_allocator.bottom = (void*)0; // start from the beginning
 	page_allocator.active = true;
 
+	// The kernel owns all of the physical pages for the first table's worth, but occupies the top half
 	BitRange kernel_range = alloc_bitrange(page_allocator.bitmap, PAGE_BITMAP_CAPACITY, 1024, false);
 	ASSERT(kernel_range.length == 1024 && kernel_range.start == 0, "Should be the same");
 

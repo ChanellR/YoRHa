@@ -36,5 +36,6 @@ void kwrite(const char* data, size_t size);
 void kputint(int value);
 void kprint(const char* s);
 void kprintf(const char* fmt, ...);
+void fmt(char* buffer, const char* fmt, ...);
 
 #endif // VGA_H

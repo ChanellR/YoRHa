@@ -46,16 +46,28 @@ int32_t exec_ls(int32_t stdin, int32_t stdout, StringList cmd) {
 	return 0;
 }
 
-// cmd: cat 'filename'
+// cmd: cat 'filename' b
 int32_t exec_cat(int32_t stdin, int32_t stdout, StringList cmd) {
 	UNUSED(stdin);
-	char c;
-	int32_t fd = open(cmd.contents[1].contents);
+	int32_t fd = open(cmd.contents[cmd.len-1].contents);
 	if (fd == -1) {
 		return -1;
 	}
+	
+	static const char nib_to_hex[16] = {
+		'0', '1', '2', '3', '4', '5', '6', '7',
+		'8', '9', 'A', 'B', 'C', 'D', 'E', 'F'
+	};
+	
+	char c;
 	while (read(fd, &c, 1) > 0) {
-		write(stdout, &c, 1);
+		if (cmd.len == 3 && MATCH(cmd.contents[1], "-b")) {
+			write(stdout, "\\x", 2);
+			write(stdout, &nib_to_hex[c>>4], 1);
+			write(stdout, &nib_to_hex[c&0xF], 1);
+		} else {
+			write(stdout, &c, 1);
+		}
 	}
 	close(fd);
 	return 0;
@@ -124,31 +136,43 @@ int32_t exec_sget(int32_t stdin, int32_t stdout, StringList cmd) {
 
 	write(STDOUT, "waiting for serial port to initiate communication...\n", 54);
 
-	char c;
 	bool in_message = false;
 	uint64_t time_out_duration = (uint32_t)(5.0 * 100);
 	uint64_t base_time = timer_counter;
+	
+	char c;
+	uint8_t bytes_read = 0;
+	uint8_t file_size[4] = {0}; // in bytes
 	while (1) {
 		if (timer_counter > base_time + time_out_duration) {
 			PUSH_ERROR("sget timed out, couldn't complete transfer\n");
 			close(fd);
 			return -1;
 		} 
-		
-		while (read(SERIAL, &c, 1) > 0) {
-			base_time = timer_counter;
-			if (c == STX) {
-				write(STDOUT, "beginning download...\n", 23);
-				in_message = true;
-				continue;
-			} else if (c == ETX) {
-				write(STDOUT, "download complete...\n", 22);
-				close(fd);
-				return (in_message) ? 0 : -1;
-			}
 
-			if (in_message) {
-				while (!write(fd, &c, 1)); // write until it succeeds
+		// BUG: doesn't read file size correctly
+		if (!in_message) {
+			while (read(SERIAL, &c, 1) > 0) {
+				file_size[bytes_read] = c;
+				bytes_read++;
+			}	
+			if (bytes_read == 4) {
+				write(STDOUT, "beginning download file of size ", 33);
+				char buf[12];
+				fmt(buf, "%x...\n", file_size);
+				write(STDOUT, buf, 15);
+				in_message = true;
+				bytes_read = 0;
+			}
+		}
+		
+		while (in_message && read(SERIAL, &c, 1) > 0) {
+			base_time = timer_counter;
+			bytes_read++;
+			while (!write(fd, &c, 1)); // write until it succeeds
+			if (bytes_read == file_size) {
+				write(STDOUT, "download completed...\n", 23);
+				return 0;
 			}
 		}
 	}
@@ -161,9 +185,9 @@ int32_t exec_sget(int32_t stdin, int32_t stdout, StringList cmd) {
 }
 
 typedef struct {
-    uint32_t size;   // Program size
-    uint32_t entry;  // Entry point offset
     char magic[4];   // Magic number ("FASH")
+    uint32_t entry;  // Entry point offset
+    uint32_t size;   // Program size
 } header_t;
 
 // cmd: run `filename`
@@ -182,7 +206,6 @@ int32_t exec_run(int32_t stdin, int32_t stdout, StringList cmd) {
 	// enable_paging(&process_dir);
 
 	// maps pages in user space
-	uint32_t program_memory[0x10];
 	int32_t fd = open(cmd.contents[1].contents);
 	if (fd == -1) {
 		// enable_paging(&)
@@ -192,10 +215,11 @@ int32_t exec_run(int32_t stdin, int32_t stdout, StringList cmd) {
 	header_t header;
 	read(fd, &header, sizeof(header_t));
 	
-	seek(fd, 0, SEEK_SET);
-	read(fd, program_memory, 0x10);
-	load_process(program_memory, header.size, 0);
-
+	uint32_t program_memory[header.size / sizeof(uint32_t) + 1];
+	seek(fd, header.entry, SEEK_SET);
+	read(fd, program_memory, header.size);
+	// load_process(program_memory, header.size, 0);
+	
 	// saves context
 	// calls the process
 	asm volatile (
@@ -206,6 +230,17 @@ int32_t exec_run(int32_t stdin, int32_t stdout, StringList cmd) {
 		: "r"(header.entry)     // Pass the entry point address
 		: "memory"              // Indicate memory is clobbered
 	);
+
+	// // saves context
+	// // calls the process
+	// asm volatile (
+	// 	"pusha;"                // Push all general-purpose registers
+	// 	"call *%0;"             // Call the entry point
+	// 	"popa;"                 // Pop all general-purpose registers
+	// 	:
+	// 	: "r"(header.entry)     // Pass the entry point address
+	// 	: "memory"              // Indicate memory is clobbered
+	// );
 
 	// at some point return
 	return -1;
@@ -329,7 +364,11 @@ void main(void)
 	enable_interrupts();
 
 	// run_tests();
-	
+
+	// char buf[26] = {0};
+	// fmt(buf, "%s,%x\0", "Hello", 0xDEADBEEF);
+	// kprint(buf);
+
 	shell();
 
 	shutdown();

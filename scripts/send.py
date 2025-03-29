@@ -1,5 +1,6 @@
 import subprocess
 import os
+import struct
 
 cmd = "qemu-system-i386 -m 1024M -drive file=disk/hd.img,format=raw -kernel build/kernel.bin -serial stdio"
 
@@ -10,19 +11,21 @@ process = subprocess.Popen(
     stdin=subprocess.PIPE,
     stdout=subprocess.PIPE,
     stderr=subprocess.PIPE,
-    text=True,  # This makes the pipes work with strings instead of bytes
-    bufsize=1  # Line-buffered
+    text=False  # This makes the pipes work with strings instead of bytes
+    # bufsize=1  # Line-buffered
 )
 
 # Prompt the user to select a binary file
-binary_file_path = input("Enter the path to the binary file: ")
+binary_file_path = "programs/build/countup.bin"
 
 # Read the binary file content
 with open(binary_file_path, "rb") as binary_file:
-    message = binary_file.read()
-    
+    binary_data = binary_file.read()    
+file_size = struct.pack("<I", len(binary_data))
+
+print(f"Preparing to send {file_size + binary_data}")
 input("Press any key to being transmission")
-process.stdin.write(f"\2{message}\3")
+process.stdin.write(file_size + binary_data)
 process.stdin.flush()  # Ensure the input is sent
 print("Completed")
 

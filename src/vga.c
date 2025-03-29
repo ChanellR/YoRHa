@@ -178,3 +178,79 @@ void kprintf(const char* fmt, ...) {
 
 	va_end(argptr);
 }
+
+void fmt(char* buffer, const char* fmt, ...) {
+	va_list argptr;
+	va_start(argptr, fmt);
+	size_t i = 0;
+	size_t buf_index = 0;
+
+	char c = fmt[i];
+	while (c) {
+		if (c == '%') {
+			char next = fmt[++i];
+			if (!next) {
+				break;
+			}
+			switch (next) {
+				case 's': { // string
+					const char* str = va_arg(argptr, char*);
+					while (*str) {
+						buffer[buf_index++] = *str++;
+					}
+					break;
+				}
+				case 'c': { // character
+					buffer[buf_index++] = (char)va_arg(argptr, int);
+					break;
+				}
+				case 'd': { // signed decimal integer
+					int value = va_arg(argptr, int32_t);
+					char temp[12]; // Enough for a 32-bit int
+					int_to_string(value, temp);
+					for (size_t j = 0; temp[j]; j++) {
+						buffer[buf_index++] = temp[j];
+					}
+					break;
+				}
+				case 'u': { // unsigned decimal integer
+					unsigned int value = va_arg(argptr, uint32_t);
+					char temp[12]; // Enough for a 32-bit unsigned int
+					int_to_string(value, temp);
+					for (size_t j = 0; temp[j]; j++) {
+						buffer[buf_index++] = temp[j];
+					}
+					break;
+				}
+				case 'x': { // hexadecimal
+					uint32_t num = va_arg(argptr, uint32_t);
+					char hex_num[9]; // 8 digits plus null terminator
+					buff_to_hexstring((void*)(&num), hex_num, 4);
+					for (size_t j = 0; hex_num[j]; j++) {
+						buffer[buf_index++] = hex_num[j];
+					}
+					break;
+				}
+				case 'b': { // binary
+					uint32_t num = va_arg(argptr, uint32_t);
+					char bin_string[33]; // 32 digits plus null terminator
+					buff_to_binstring((void*)(&num), bin_string, 4);
+					for (size_t j = 0; bin_string[j]; j++) {
+						buffer[buf_index++] = bin_string[j];
+					}
+					break;
+				}
+				default: {
+					buffer[buf_index++] = c;
+					buffer[buf_index++] = next;
+				}
+			}
+		} else {
+			buffer[buf_index++] = c;
+		}
+		c = fmt[++i];
+	}
+
+	buffer[buf_index] = '\0'; // Null-terminate the buffer
+	va_end(argptr);
+}
